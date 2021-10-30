@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package frl.activity;
+
+import "protos/activity/tkpg.proto";
+
+message ModelKind {
+  enum Enum {
+    INVALID = 0;
+    TKPG_CFN = 1;
+  }
+}
+
+// Next ID: 5
+message ModelState {
+  string model_name = 1;
+  int64 model_version = 2;
+  ModelKind.Enum kind = 3;
+  // The oneof avoids the 8-byte growth in memory every time we add a new
+  // model due to the nil pointer in the generated struct.
+  oneof model {
+    TKPGState tkpg = 4;
+  }
+}

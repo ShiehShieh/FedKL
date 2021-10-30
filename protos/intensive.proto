@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package frl;
+
+// Next ID: 8
+message IntensiveConfig {
+  // Minimim activities during the whole session.
+  int32 session_min_activity = 1;
+  // Maximum activities during the whole session.
+  int32 session_max_activity = 2;
+  AutoReviewConfig auto_review_config = 3;
+  AutoExtensionConfig auto_extension_config = 4;
+  float word_ratio = 5;
+  string model_name = 6;
+  int64 model_version = 7;
+  // Key is the experiment flag string.
+  map<string, TFModelConfig> tf_model_config = 8;
+}
+
+
+// Config parameters for tensorflow serving model.
+//
+// Next ID: 3
+message TFModelConfig {
+  string model_name = 1;
+  int64 model_version = 2;
+}
+
+// Config parameters of intensive review episode.
+//
+// Next ID: 4
+message AutoReviewConfig {
+	int32 min_activities = 1;
+	int32 max_cnt_wrong = 2;
+	int32 min_days_since = 3;
+}
+
+// Config parameters of intensive extension episode.
+//
+// Next ID: 2
+message AutoExtensionConfig {
+	int32 min_activities = 1;
+}

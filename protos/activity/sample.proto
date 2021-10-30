@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package frl.activity;
+
+import "protos/activity/tkpg.proto";
+import "protos/shared.proto";
+
+// A generic action.
+//
+// Next ID: 5
+message Action {
+  enum Kind {
+    UNKNOWN = 0;
+    CORE_COURSE = 1;
+    INTENSIVE = 2;
+    COMPREHENSIVE = 3;
+  }
+  Kind kind = 1;
+  uint64 id = 2;
+  string str_id = 3;
+  int64 timestamp_usec = 4;
+}
+
+// A generic observation observed by agent after taking an action.
+// A trimed down version of SessionEvent.
+//
+// Next ID: 3
+message Observation {
+  enum Kind {
+    UNKNOWN = 0;
+    PLACEMENT_TEST = 1;
+    USER_ANSWER = 2;
+  }
+  Kind kind = 1;
+
+  // Performance of the kp, activity, session, lesson, etc.
+  message Performance {
+    // Key is KP label.
+    map<uint64, BellItemRecord> kp_record = 1;
+    // Key is activity ID.
+    map<uint64, BellItemRecord> activity_record = 2;
+  }
+  Performance performance = 2;
+}
+
+// An delivery contains an action and observation of the action.
+//
+// Next ID: 3
+message Delivery {
+  // The action taken in this interaction. Not populated if we did nothing.
+  Action action = 1;
+  // The observation of learning feedback from the action.
+  Observation observation = 2;
+}
+
+// Latest learning state of a specific time step.
+//
+// Next ID: 4
+message LearningState {
+  // Key is show KP ID, value is whether the KP has been grasped.
+  map<uint64, bool> show_kp_state = 1;
+  map<uint64, float> show_kp_proficiency = 2;
+}
+
+// A sample step represents one single recommendation event.
+//
+// Next ID: 5
+message SampleStep {
+  int32 step_index = 1;
+  // One interactions per step.
+  Delivery delivery = 2;
+  LearningState learning_state = 3;
+  // Candidate actions.
+  repeated string candidates = 4;
+}
+
+// Conversion information.
+message Conversion {
+  // Whether the user has purchased the formal BELL package.
+  bool order = 1;
+  // If the user is active in the last day of validity period.
+  bool active_last_day = 2;
+  // Total active days within the validity period.
+  int32 active_days = 3;
+}
+
+// A sample of Bell course recommendation trajectory. This is the source proto
+// feeded to the RL model packages.
+//
+// Next ID: 7
+message Sample {
+  enum Kind {
+    INVALID = 0;
+    LIFE_TIME_WISE = 1;
+    SESSION_WISE = 2;
+  }
+  Kind kind = 1;
+  // Filled if kind == LIFE_TIME_WISE.
+  uint64 user_id = 2;
+  // Filled if kind == SESSION_WISE.
+  uint64 session_id = 3;
+  repeated SampleStep trajectory = 4;
+  Conversion conversion = 5;
+  // TKPG model state. This is only used in online inference.
+  frl.activity.TKPGState tkpg_state = 6;
+}
+
+// Next ID: 2
+message Samples {
+  repeated Sample sample = 1;
+}

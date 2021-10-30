@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package frl.activity;
+
+// Next ID: 10
+message ModelConstants {
+  // TODO(li.li): Add context constants.
+
+  // All supported action kinds, should be ActionKind.
+  repeated string all_action_kind = 1;
+  // All supported observation kinds, should be ObservationKind.
+  repeated string all_observation_kind = 2;
+
+  // All activity types appearing in the Bell content. The string is
+  // ActivityType.Enum.
+  repeated string all_activity_type = 3;
+  // All activity IDs appearing in the Bell content.
+  repeated string all_activity_key = 4;
+
+  // All KP node IDs appearing in the Bell content.
+  repeated string all_kp_key = 5;
+  // All show KP node IDS.
+  repeated string all_show_kp_key = 6;
+
+  repeated string all_dimension = 9;
+  repeated ModelActivity activity = 8;
+}
+
+// Next ID: 10
+message ModelActivity {
+  // ACtivity ID in string format.
+  //
+  // An empty key means "unknown" lesson.
+  string activity_key = 1;
+  uint64 activity_id = 2;
+  string dimension = 3;
+
+  // All related show KP keys.
+  repeated string show_kp_key = 4;
+  // Count the Show KP frequency in different activities of the lesson. Max
+  // value is the number of activites. Length is len(all_show_kp_key).
+  repeated int32 show_kp_count = 5;
+}
