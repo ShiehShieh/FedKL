@@ -15,12 +15,13 @@ class FedTRPO(fedbase_lib.FederatedBase):
 
   def __init__(self, clients_per_round, num_rounds, num_iter,
                timestep_per_batch, max_steps, eval_every,
-               drop_percent, verbose=False):
+               drop_percent, verbose=False, svf_n_timestep=1e6, **kwargs):
     super(FedTRPO, self).__init__(
         clients_per_round, num_rounds, num_iter, timestep_per_batch,
         max_steps, eval_every,
         drop_percent)
     self.verbose = verbose
+    self.svf_n_timestep = svf_n_timestep
 
   def train(self):
     logging.error('Training with {} workers per round ---'.format(self.clients_per_round))
@@ -50,13 +51,13 @@ class FedTRPO(fedbase_lib.FederatedBase):
         # Sync local (global) params to local old policy before training.
         # c.sync_old_policy()
         # Enable svf so as to calculate norm constraint.
-        c.enable_svf()
+        c.enable_svf(self.svf_n_timestep)
         # Sequentially run train each client. Notice that, we do not sync
         # old policy before each local fit, but before round.
         c.experiment(num_iter=self.num_iter,
                      timestep_per_batch=self.timestep_per_batch,
                      callback_before_fit=[c.sync_old_policy],
-                     logger=inner_loop.write)
+                     logger=inner_loop.write if self.verbose else None)
 
         # gather weights from client
         cws.append((c.get_client_weight(), c.get_params()))

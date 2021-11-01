@@ -168,7 +168,7 @@ class REINFORCEActor(pg_lib.PolicyGradient):
 
   def act(self, observations, stochastic=True):
     m = {
-        self.observations: [observations],
+        self.observations: observations,
         self.actions: self.env_sample['actions'],
         self.reward: self.env_sample['reward'],
         self.seq_mask: self.env_sample['seq_mask'],
@@ -176,5 +176,5 @@ class REINFORCEActor(pg_lib.PolicyGradient):
     }
     probs = self.sess.run(self.prob_pi, feed_dict=m)
     if stochastic:
-      return distributions_lib.categorical_sample(probs)[0], probs
-    return np.argmax(probs[0]), probs
+      return distributions_lib.categorical_sample(probs), probs
+    return np.argmax(probs, axis=1), probs

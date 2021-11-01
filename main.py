@@ -2,20 +2,12 @@ from __future__ import absolute_import, division, print_function
 
 from absl import app, flags, logging
 
-import gym
-import time
-import queue
-import random
-import numpy as np
 import tensorflow as tf
 import tensorflow.compat.v1 as tfv1
-from collections import deque
-from multiprocessing.dummy import Pool as ThreadPool
 
 tfv1.disable_eager_execution()
 
 import client.client as client_lib
-import env.cartpolev0 as cartpolev0_lib
 import env.halfcheetahv2 as halfcheetahv2_lib
 import env.humanoidv2 as humanoidv2_lib
 import model.fl.fedavg as fedavg_lib
@@ -46,19 +38,22 @@ flags.DEFINE_string("pg", "REINFORCE", "Policy Gradient Algorithm.")
 def main(_):
   gpus = tf.config.experimental.list_physical_devices('GPU')
   logging.error(gpus)
+
   # Federated Learning Experiments.
   lr = FLAGS.lr
   mu = 1e-4
   params = {
       'clients_per_round': 10,
-      'num_rounds': 20,
+      'num_rounds': 50,
       'num_iter': 10,
       'timestep_per_batch': 2048,
       'max_steps': 10000,
       'eval_every': 1,
       'drop_percent': 0.0,
       'verbose': True,
+      'svf_n_timestep': 5e5,
   }
+  parallel = None
   if FLAGS.fed == 'FedAvg':
     fl = fedavg_lib.FedAvg(**params)
     # opt_class = lambda: tf.optimizers.Adam(learning_rate=lr)
@@ -70,19 +65,27 @@ def main(_):
   elif FLAGS.fed == 'FedTRPO':
     fl = fedtrpo_lib.FedTRPO(**params)
     opt_class = lambda: tf.optimizers.SGD(learning_rate=lr)
+    parallel = 4
 
-  # Set up clients.
+  # Create env before hand for saving memory.
+  envs = []
   num_total_clients = 100
   for i in range(num_total_clients):
-    optimizer = opt_class()
+    seed = int(i * 1e4)
     interval = 0.01
-    x_left = -0.255 + interval / 2.0 * i
+    x_left = -0.375 + interval * 3.0 / 4.0 * i
     x_right = x_left + interval
     env = halfcheetahv2_lib.HalfCheetahV2(
-        seed=i, qpos_high_low=[x_left, x_right],
-        qvel_high_low=[-0.005, 0.005])
+        seed=seed, qpos_high_low=[x_left, x_right],
+        qvel_high_low=[-0.005, 0.005], parallel=parallel)
     logging.error([x_left, x_right])
+    envs.append(env)
 
+  # Set up clients.
+  for i in range(num_total_clients):
+    seed = int(i * 1e4)
+    env = envs[i]
+    optimizer = opt_class()
     if FLAGS.pg == 'REINFORCE':
       agent = agent_lib.Agent(
           str(i), reinforce_lib.REINFORCEActor(
@@ -96,9 +99,9 @@ def main(_):
           str(i), trpo_lib.TRPOActor(
               env, optimizer, model_scope='trpo_' + str(i),
               batch_size=64, num_epoch=10, future_discount=0.99,
-              kl_targ=0.01, beta=1.0, lam=0.95, seed=i,
+              kl_targ=0.01, beta=1.0, lam=0.95, seed=seed,
           ), init_exp=0.5, final_exp=0.0, anneal_steps=1,
-          critic=critic_lib.Critic(env.state_dim, 200, seed=i)
+          critic=critic_lib.Critic(env.state_dim, 200, seed=seed)
       )
     # agent.build()
 

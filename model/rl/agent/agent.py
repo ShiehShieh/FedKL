@@ -48,8 +48,9 @@ class Agent(object):
     # epsilon-greedy exploration strategy
     if random.random() < self.epsilon:
       if len(action.shape) == 0:
-        return random.randint(0, self.policy.num_actions - 1), probs
-      return np.random.rand(self.policy.num_actions), probs
+        return random.randint(
+            0, self.policy.num_actions - 1, size=action.shape[0]), probs
+      return np.random.rand(*action.shape), probs
     else:
       return action, probs
 

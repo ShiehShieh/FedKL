@@ -311,6 +311,7 @@ class TRPOActor(pg_lib.PolicyGradient):
         iw_list.append(np.mean(iw))
 
     # Iteration stat.
+    return
     if logger:
       logger('# steps: %d' % len(steps['observations']))
       logger('Average kl in this iteration: %.20e' % (np.mean(kl_list)))
@@ -319,11 +320,11 @@ class TRPOActor(pg_lib.PolicyGradient):
 
   def act(self, observations, stochastic=True):
     m = {
-        self.observations: [observations],
+        self.observations: observations,
         self.actions: self.env_sample['actions'],
         self.dropout_pd: 0.0,
     }
     probs = self.sess.run(self.prob_pi, feed_dict=m)
     if stochastic:
-      return self.prob_type.sample(probs)[0], probs
-    return self.prob_type.maxprob(probs)[0], probs
+      return self.prob_type.sample(probs), probs
+    return self.prob_type.maxprob(probs), probs

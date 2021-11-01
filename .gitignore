@@ -134,3 +134,6 @@ dmypy.json
 
 # Bazel.
 bazel-*
+
+# numpy.
+*.npy
