@@ -1,17 +1,8 @@
 from __future__ import absolute_import, division, print_function
 
-from absl import logging
-
 import numpy as np
 
-import os
 import random
-import itertools
-import tensorflow as tf
-import tensorflow.compat.v1 as tfv1
-
-import model.rl.agent.actor as actor_lib
-import model.rl.agent.ops as ops_lib
 
 
 class Agent(object):

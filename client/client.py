@@ -2,7 +2,6 @@
 
 from absl import logging
 
-import time
 import numpy as np
 from collections import deque, defaultdict
 
@@ -178,12 +177,14 @@ class Client(object):
     svf = np.zeros(shape=(1,))
     if self.use_svf:
       svf_m = defaultdict(float)
+      envs = self.env.get_parallel_envs()
       paths, episode_rewards = self.rollout(
-          self.svf_n_timestep, self.env.get_parallel_envs())
+          self.svf_n_timestep, envs)
       svf, svf_m = svf_lib.find_svf(-1, paths, svf_m)
       if logger:
         logger('svf shape %s, l2 norm: %.10e' % (
             svf.shape, np.linalg.norm(svf / np.sum(svf), ord=2)))
+      envs.close()
 
     for i in range(num_iter):
       self.num_iter_seen += 1

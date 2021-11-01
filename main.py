@@ -9,7 +9,6 @@ tfv1.disable_eager_execution()
 
 import client.client as client_lib
 import env.halfcheetahv2 as halfcheetahv2_lib
-import env.humanoidv2 as humanoidv2_lib
 import model.fl.fedavg as fedavg_lib
 import model.fl.fedprox as fedprox_lib
 import model.fl.fedtrpo as fedtrpo_lib
@@ -24,15 +23,13 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("op", "Train", "Train or Test?")
 flags.DEFINE_integer("batch_size", 32, "Sample size for one batch.")
 flags.DEFINE_integer("num_epoches", 1, "Maximum number of training epoches.")
-flags.DEFINE_integer("max_train_steps", None,
-                     "If not None, run at most this many steps.")
-flags.DEFINE_integer("max_seq_len", 256, "Maximum sequence length.")
-flags.DEFINE_integer("init_action", -1, "The initial action taken.")
 flags.DEFINE_integer("num_clients", 10, "The number of clients.")
 
 flags.DEFINE_float("lr", "1e-4", "Learning rate.")
 flags.DEFINE_string("fed", "FedAvg", "Federated Learning Algorithm.")
 flags.DEFINE_string("pg", "REINFORCE", "Policy Gradient Algorithm.")
+
+flags.DEFINE_integer("parallel", 6, "Parallelism for env rollout.")
 
 
 def main(_):
@@ -65,7 +62,7 @@ def main(_):
   elif FLAGS.fed == 'FedTRPO':
     fl = fedtrpo_lib.FedTRPO(**params)
     opt_class = lambda: tf.optimizers.SGD(learning_rate=lr)
-    parallel = 4
+    parallel = FLAGS.parallel
 
   # Create env before hand for saving memory.
   envs = []

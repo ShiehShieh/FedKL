@@ -2,15 +2,10 @@ from __future__ import absolute_import, division, print_function
 
 from absl import app, flags, logging
 
-from multiprocessing.dummy import Pool as ThreadPool
+# from multiprocessing.dummy import Pool as ThreadPool
 
-import gym
-import queue
 import random
-import threading
 import numpy as np
-import tensorflow as tf
-import tensorflow.compat.v1 as tfv1
 
 
 class FederatedBase(object):
