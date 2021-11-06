@@ -137,3 +137,6 @@ bazel-*
 
 # numpy.
 *.npy
+
+# Images.
+*.png

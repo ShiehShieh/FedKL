@@ -66,9 +66,11 @@ class DiscretePolicyNN(object):
 
 
 class ContinuousPolicyNN(object):
-  def __init__(self, num_actions, dropout_rate=None, seed=None):
+  def __init__(
+      self, num_actions, dropout_rate=None, seed=None, linear=False):
     self.dropout_rate = dropout_rate
     self.seed = seed
+    self.linear = linear
     self.h1 = tf.keras.layers.Dense(
         units=64, use_bias=True,
         activation='tanh',
@@ -90,10 +92,15 @@ class ContinuousPolicyNN(object):
         initial_value=[0.0] * num_actions, name='logstd')
 
   def var(self):
+    if self.linear:
+      return self.o.trainable_variables + [self.r]
     return self.h1.trainable_variables + self.h2.trainable_variables + self.o.trainable_variables + [self.r]
 
   def forward(self, observations):
-    mean = self.o(self.h2(self.h1(observations)))
+    if self.linear:
+      mean = self.o(observations)
+    else:
+      mean = self.o(self.h2(self.h1(observations)))
     batch_size = tf.shape(observations)[0]
     log_std = tf.tile(tf.expand_dims(self.r, axis=0), (batch_size, 1))
     prob = tf.concat([mean, tf.math.exp(log_std)], axis=1)
@@ -113,7 +120,9 @@ class TRPOActor(pg_lib.PolicyGradient):
                beta=1.0,
                importance_weight_cap=10.0,
                dropout_rate=0.1,
-               seed=None):
+               seed=None,
+               linear=False,
+               verbose=True):
     super(TRPOActor, self).__init__()
 
     self.optimizer = optimizer
@@ -150,12 +159,14 @@ class TRPOActor(pg_lib.PolicyGradient):
         self.dropout_pd = tfv1.placeholder(tf.float32, name='dropout_rate')
         self.state_visitation_frequency = tfv1.placeholder(
             tf.float32, name='state_visitation_frequency')
+        self.norm_penalty = tfv1.placeholder(
+            tf.float32, name='norm_penalty')
 
         if env.is_continuous:
           self.policy_network = ContinuousPolicyNN(
-              self.num_actions, seed=seed)
+              self.num_actions, seed=seed, linear=linear)
           self.old_network = ContinuousPolicyNN(
-              self.num_actions, seed=seed)
+              self.num_actions, seed=seed, linear=linear)
           self.prob_type = prob_type_lib.DiagGauss(self.num_actions)
           self.sampled_prob = tfv1.placeholder(
               tf.dtypes.float32, [None, self.num_actions * 2],
@@ -180,7 +191,7 @@ class TRPOActor(pg_lib.PolicyGradient):
         self.prob_pi = prob_pi
         self.sync_op = sync_op
 
-    self.sess = tfv1.Session(graph=self.graph, config=tfv1.ConfigProto(log_device_placement=True))
+    self.sess = tfv1.Session(graph=self.graph, config=tfv1.ConfigProto(log_device_placement=verbose))
 
     # find memory footprint and compute cost of the model
     self.graph_size = utils_lib.graph_size(self.graph)
@@ -224,9 +235,7 @@ class TRPOActor(pg_lib.PolicyGradient):
 
     # Norm constraint.
     svf = self.state_visitation_frequency
-    vargamma = tf.square(
-        tf.norm(svf / utils_lib.stablize(tf.reduce_sum(svf)), ord=2))
-    nc = vargamma * tf.math.abs(surr)
+    nc = self.norm_penalty * tf.math.abs(surr)
 
     self.surr = surr
     self.kl = kl
@@ -285,9 +294,10 @@ class TRPOActor(pg_lib.PolicyGradient):
             self.observations: [step for step in steps['observations'][i:end]],
             self.actions: [step for step in steps['actions'][i:end]],
             self.advantages: [step for step in steps['advantages'][i:end]],
-            self.sampled_prob: [step for step in steps['probs'][i:end]],
+            # self.sampled_prob: [step for step in steps['probs'][i:end]],
             self.dropout_pd: self.dropout_rate,
             self.state_visitation_frequency: steps['svf'],
+            self.norm_penalty: steps['norm_penalty'],
         }
 
         # perform one update of training

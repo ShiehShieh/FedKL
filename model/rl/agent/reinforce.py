@@ -52,7 +52,8 @@ class REINFORCEActor(pg_lib.PolicyGradient):
                future_discount=0.99,
                normalize_reward=False,
                importance_weight_cap=10.0,
-               dropout_rate=0.0):
+               dropout_rate=0.0,
+               verbose=True):
     super(REINFORCEActor, self).__init__()
 
     self.optimizer = optimizer
@@ -100,7 +101,7 @@ class REINFORCEActor(pg_lib.PolicyGradient):
         self.gradients = pi_grad
         self.prob_pi = prob_pi
 
-    self.sess = tfv1.Session(graph=self.graph, config=tfv1.ConfigProto(log_device_placement=True))
+    self.sess = tfv1.Session(graph=self.graph, config=tfv1.ConfigProto(log_device_placement=verbose))
 
     # find memory footprint and compute cost of the model
     self.graph_size = utils_lib.graph_size(self.graph)

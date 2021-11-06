@@ -21,6 +21,37 @@ class FedTRPO(fedbase_lib.FederatedBase):
     self.verbose = verbose
     self.svf_n_timestep = svf_n_timestep
 
+  def get_state_visitation_frequency(self, active_clients, logger=None):
+    svf_ms = []
+    for idx, c in enumerate(active_clients):
+      c.enable_svf(self.svf_n_timestep)
+      d = c.get_state_visitation_frequency()
+      svf_ms.append(d)
+      if logger:
+        logger('client id: %s, # state %s, l2 norm: %.10e' % (
+            c.cid, len(d), np.linalg.norm(list(d.values()), ord=2)))
+    full_keys = {}
+    for svf_m in svf_ms:
+      for k in svf_m.keys():
+        if k in full_keys:
+          continue
+        full_keys[k] = len(full_keys)
+    if logger:
+      logger('# keys: %d' % (len(full_keys)))
+    svfs = np.zeros(shape=(len(active_clients), len(full_keys)))
+    for i, svf_m in enumerate(svf_ms):
+      for k, v in svf_m.items():
+        j = full_keys[k]
+        svfs[i][j] += v
+    # svfs = svfs / np.sum(svfs, axis=1)[:, np.newaxis]
+    avg = np.mean(svfs, axis=0)
+    norm_penalties = np.linalg.norm(avg - svfs, ord=2, axis=1)
+    # np.sqrt(np.mean(np.square(np.linalg.norm(svfs, ord=2, axis=1))))
+    if logger:
+      logger('norm_penalties shape %s, l2 norm: %s' % (
+          norm_penalties.shape, norm_penalties))
+    return svfs, norm_penalties
+
   def train(self):
     logging.error('Training with {} workers per round ---'.format(self.clients_per_round))
     outer_loop = tqdm(
@@ -38,24 +69,34 @@ class FedTRPO(fedbase_lib.FederatedBase):
       if cpr > len(selected_clients):
         cpr = len(selected_clients)
       active_clients = np.random.choice(selected_clients, round(cpr * (1 - self.drop_percent)), replace=False)
+      self.distribute(active_clients)
 
-      cws = []  # buffer for receiving client solutions
+      # buffer for receiving client solutions
+      cws = []
+
+      # An experiment about the performance of FedTRPO if \rho are not confidential.
+      # Remember to call distribute() before this step.
+      _, norm_penalties = self.get_state_visitation_frequency(
+          active_clients, logger=outer_loop.write if self.verbose \
+              else None)
 
       # communicate the latest model
       inner_loop = tqdm(
           total=len(active_clients), desc='Client', position=1)
-      self.distribute(active_clients)
-      for idx, c in enumerate(active_clients):  # simply drop the slow devices
+
+      # Round.
+      for idx, c in enumerate(active_clients):
         # Sync local (global) params to local old policy before training.
         # c.sync_old_policy()
-        # Enable svf so as to calculate norm constraint.
+        # Enable svf so as to calculate norm penalty.
         c.enable_svf(self.svf_n_timestep)
         # Sequentially run train each client. Notice that, we do not sync
         # old policy before each local fit, but before round.
         c.experiment(num_iter=self.num_iter,
                      timestep_per_batch=self.timestep_per_batch,
                      callback_before_fit=[c.sync_old_policy],
-                     logger=inner_loop.write if self.verbose else None)
+                     logger=inner_loop.write if self.verbose else None,
+                     norm_penalty=norm_penalties[idx:idx + 1])
 
         # gather weights from client
         cws.append((c.get_client_weight(), c.get_params()))

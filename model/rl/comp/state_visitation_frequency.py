@@ -9,6 +9,26 @@ import tensorflow as tf
 import tensorflow.compat.v1 as tfv1
 
 
+def find_discounted_svf(n_states, trajectories, svf_m=None, gamma=1.0):
+  # Continuous state space.
+  if n_states == -1:
+    seq_len = [t['observations'].shape[0] for t in trajectories]
+    max_seq_len = np.max(seq_len)
+    mask = np.array([[float(j < sl) for j in range(max_seq_len)]
+                     for i, sl in enumerate(seq_len)])
+    pr = mask / mask.sum(axis=0)
+
+    d = defaultdict(float)
+    for i, trajectory in enumerate(trajectories):
+      for j, obs in enumerate(trajectory['observations']):
+        obs = np.round(obs, decimals=0)
+        d[tuple(obs.tolist())] += pow(gamma, j) * pr[i, j]
+    for k, v in d.items():
+      d[k] = (1 - gamma) * v
+
+    return d
+
+
 def find_svf(n_states, trajectories, svf_m=None):
     """
     Find the state vistiation frequency from trajectories.
@@ -20,16 +40,16 @@ def find_svf(n_states, trajectories, svf_m=None):
     """
     # Continuous state space.
     if n_states == -1:
-      svf = defaultdict(float)
+      m = defaultdict(float)
       if svf_m is not None:
-        svf = svf_m
+        m = svf_m
 
       for trajectory in trajectories:
         for obs in trajectory['observations']:
           obs = np.round(obs, decimals=0)
-          svf[tuple(obs.tolist())] += 1.0
+          m[tuple(obs.tolist())] += 1.0
 
-      return np.array([v for k, v in svf.items()]) / float(len(trajectories)), svf
+      return np.array([v for k, v in m.items()]) / float(len(trajectories)), m
 
     # Finite state space.
     svf = np.zeros(n_states)

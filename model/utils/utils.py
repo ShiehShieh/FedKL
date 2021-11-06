@@ -171,23 +171,10 @@ def standardize(x):
 
 
 def convert_trajectories_to_steps(trajectories, shuffle=False):
+  keys = list(trajectories[0].keys())
   o = {
-      'observations': np.concatenate(
-          [t['observations'] for t in trajectories], axis=0),
-      'actions': np.concatenate(
-          [t['actions'] for t in trajectories], axis=0),
-      'reward': np.concatenate(
-          [t['reward'] for t in trajectories], axis=0),
-      'dfr': np.concatenate(
-          [t['dfr'] for t in trajectories], axis=0),
-      'advantages': np.concatenate(
-          [t['advantages'] for t in trajectories], axis=0),
-      'seq_mask': np.concatenate(
-          [t['seq_mask'] for t in trajectories], axis=0),
-      'probs': np.concatenate(
-          [t['probs'] for t in trajectories], axis=0),
-      'value': np.concatenate(
-          [t['value'] for t in trajectories], axis=0),
+      k: np.concatenate([t[k] for t in trajectories], axis=0)
+      for k in keys
   }
   if shuffle:
     return shuffle_map(o)

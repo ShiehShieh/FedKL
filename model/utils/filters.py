@@ -16,6 +16,9 @@ class Composition(object):
             out = f.output_shape(out)
         return out
 
+def IDENTITY(x):
+  return x
+
 class ZFilter(object):
     """
     y = (x-mean)/std
