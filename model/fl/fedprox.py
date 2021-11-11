@@ -45,6 +45,7 @@ class FedProx(fedbase_lib.FederatedBase):
           total=len(active_clients), desc='Client', position=1)
       self.distribute(active_clients)
       for idx, c in enumerate(active_clients):  # simply drop the slow devices
+        c.reset_client_weight()
         # sync local (global) params to local optimizer before training.
         c.sync_optimizer()
         # Sequentially run train each client.

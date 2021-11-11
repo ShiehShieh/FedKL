@@ -52,12 +52,14 @@ class FederatedBase(object):
   def train(self):
     raise NotImplementedError
 
-  def test(self):
+  def test(self, clients=None):
     self.distribute(self.clients)
     rewards = []
     # pool = ThreadPool(len(self.clients))
     # rewards = pool.map(lambda c: c.test(), self.clients)
-    for c in self.clients:
+    if clients is None:
+      clients = self.clients
+    for c in clients:
       r = c.test()
       rewards.append(r)
     ids = [c.cid for c in self.clients]

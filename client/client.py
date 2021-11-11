@@ -20,7 +20,7 @@ class Client(object):
     self.env = env
     self.num_episodes_seen = 0
     self.num_iter_seen = 0
-    self.episode_history = deque(maxlen=50)
+    self.episode_history = deque(maxlen=20)
     self.obfilt = filters_lib.IDENTITY
     self.rewfilt = filters_lib.IDENTITY
     if filt:
@@ -37,6 +37,9 @@ class Client(object):
 
   def get_params(self):
     return self.agent.get_params()
+
+  def reset_client_weight(self):
+    return self.agent.reset_num_timestep_seen()
 
   def get_client_weight(self):
     return self.agent.get_num_timestep_seen()
@@ -64,7 +67,7 @@ class Client(object):
 
   def rollout(self, envs, n_timesteps, n_episodes):
     # Even though the input envs start from the same seed, we can still have
-    # different trajectory generated if agent is updated.
+    # different trajectory generated if agent has been updated.
     return self.subproc_vec_env_rollout(envs, n_timesteps, n_episodes)
 
   def subproc_vec_env_rollout(self, envs, n_timesteps=-1, n_episodes=-1):
@@ -174,5 +177,5 @@ class Client(object):
 
     if logger:
       mean_rewards = np.mean(self.episode_history)
-      logger("Client {}, Iteration {}".format(self.cid, self.num_iter_seen))
+      logger("Client {}, Iteration {}, Weight {}".format(self.cid, self.num_iter_seen, self.get_client_weight()))
       logger("Average reward for last {} episodes: {:.2f}".format(min(len(self.episode_history), self.episode_history.maxlen), mean_rewards))

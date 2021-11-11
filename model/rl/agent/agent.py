@@ -54,6 +54,9 @@ class Agent(object):
   def get_params(self):
     return self.policy.get_params()
 
+  def reset_num_timestep_seen(self):
+    return self.policy.reset_num_timestep_seen()
+
   def get_num_timestep_seen(self):
     return self.policy.get_num_timestep_seen()
 

@@ -23,6 +23,7 @@ import env.halfcheetahv2 as halfcheetahv2_lib
 import env.hopperv2 as hopperv2_lib
 import env.humanoidv2 as humanoidv2_lib
 import env.invertedpendulumv2 as invertedpendulumv2_lib
+import env.reacherv2 as reacherv2_lib
 import env.walker2dv2 as walker2dv2_lib
 import model.rl.agent.agent as agent_lib
 import model.rl.agent.critic as critic_lib
@@ -80,6 +81,7 @@ def main(_):
   num_epoch = 10
   batch_size = 64
   lr = 3e-4
+  lr = 1e-3
 
   # Create env before hand for saving memory.
   envs = []
@@ -93,7 +95,8 @@ def main(_):
     # env = hopperv2_lib.HopperV2(seed)
     # env = humanoidv2_lib.HumanoidV2(seed)
     # env = walker2dv2_lib.Walker2dV2(seed)
-    env = halfcheetahv2_lib.HalfCheetahV2(seed, parallel=12)
+    # env = halfcheetahv2_lib.HalfCheetahV2(seed)
+    env = reacherv2_lib.ReacherV2(seed)
     envs.append(env)
 
   # Create agent.
@@ -102,8 +105,8 @@ def main(_):
     seed = int(i * 1e4)
 
     optimizer = pgd_lib.PerturbedGradientDescent(lr, mu=1e-5)
-    optimizer = tf.optimizers.SGD(learning_rate=lr)
     optimizer = tf.optimizers.Adam(learning_rate=lr)
+    optimizer = tf.optimizers.SGD(learning_rate=lr)
 
     env = envs[i]
 
@@ -118,6 +121,7 @@ def main(_):
                                 lam=0.95,
                                 importance_weight_cap=100,
                                 dropout_rate=0.05,
+                                linear=True,
                                 verbose=False)
     agent = agent_lib.Agent(
         str(i), policy, init_exp=0.1, final_exp=0.0, anneal_steps=1,
@@ -129,16 +133,22 @@ def main(_):
     #                                       future_discount=0.99)
     # agent = agent_lib.Agent(str(i), policy, init_exp=0.1, final_exp=0.0,
     #                         anneal_steps=500)
-    client = client_lib.Client(i, i, agent, env)
+    client = client_lib.Client(
+        i, i, agent, env, num_test_epochs=20, parallel=10, filt=True,
+        extra_features=[])
     clients.append(client)
 
   pool = ThreadPool(num_client)
   # results = pool.map(experiment, clients)
   res = []
   for client in clients:
-    client.experiment(
-        num_iter, timestep_per_batch,
-        callback_before_fit=[client.sync_old_policy], logger=logging.error)
+    for i in range(num_iter):
+      if i % 10 == 0:
+        logging.error(client.test())
+      client.experiment(
+          1, timestep_per_batch,
+          callback_before_fit=[client.sync_old_policy],
+          logger=logging.error)
     res.append(client.test())
   logging.error(np.mean(res))
 

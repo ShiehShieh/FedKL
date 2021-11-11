@@ -53,6 +53,7 @@ class FedTRPO(fedbase_lib.FederatedBase):
     return svfs, norm_penalties
 
   def train(self):
+    reward_history = []
     logging.error('Training with {} workers per round ---'.format(self.clients_per_round))
     outer_loop = tqdm(
         total=self.num_rounds, desc='Round', position=0)
@@ -61,9 +62,12 @@ class FedTRPO(fedbase_lib.FederatedBase):
       if i % self.eval_every == 0:
           stats = self.test()  # have distributed the latest model.
           rewards = stats[2]
+          reward_history.append(rewards)
           outer_loop.write('At round {} expected future discounted reward: {}'.format(i, np.mean(rewards)))
 
-      indices, selected_clients = self.select_clients(i, num_clients=self.clients_per_round)  # uniform sampling
+      # uniform sampling
+      indices, selected_clients = self.select_clients(
+          i, num_clients=self.clients_per_round)
       np.random.seed(i)
       cpr = self.clients_per_round
       if cpr > len(selected_clients):
@@ -74,18 +78,19 @@ class FedTRPO(fedbase_lib.FederatedBase):
       # buffer for receiving client solutions
       cws = []
 
+      # communicate the latest model
+      inner_loop = tqdm(
+          total=len(active_clients), desc='Client', position=1)
+
       # An experiment about the performance of FedTRPO if \rho are not confidential.
       # Remember to call distribute() before this step.
       _, norm_penalties = self.get_state_visitation_frequency(
           active_clients, logger=outer_loop.write if self.verbose \
               else None)
 
-      # communicate the latest model
-      inner_loop = tqdm(
-          total=len(active_clients), desc='Client', position=1)
-
       # Round.
       for idx, c in enumerate(active_clients):
+        c.reset_client_weight()
         # Sync local (global) params to local old policy before training.
         # c.sync_old_policy()
         # Enable svf so as to calculate norm penalty.
@@ -113,6 +118,6 @@ class FedTRPO(fedbase_lib.FederatedBase):
     # final test model
     stats = self.test()
     rewards = stats[2]
-    # self.metrics.accuracies.append(stats)
-    # tqdm.write('At round {} accuracy: {}'.format(self.num_rounds, np.sum(stats[3]) * 1.0 / np.sum(stats[2])))
+    reward_history.append(rewards)
     logging.error('At round {} total reward received: {}'.format(self.num_rounds, np.mean(rewards)))
+    return reward_history

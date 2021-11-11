@@ -235,7 +235,25 @@ class TRPOActor(pg_lib.PolicyGradient):
 
     # Norm constraint.
     svf = self.state_visitation_frequency
-    nc = self.norm_penalty * tf.math.abs(surr)
+    # Assuming that the current update will not affect other state.
+    # tf.reduce_mean(
+    #     importance_weight * (
+    #         self.advantages - self.norm_penalty * tf.math.abs(
+    #             self.advantages
+    #         )
+    #     )
+    # )
+    # nc = self.norm_penalty * tf.math.abs(surr)
+    nc = tf.reduce_mean(
+        self.norm_penalty * tf.math.abs(
+            importance_weight - 1.0) * tf.math.abs(self.advantages))
+    # # Approximating the norm using batch data.
+    # # TODO(XIE,Zhijie): This advantage is not of \pi^t yet.
+    # # NOTE(XIE,Zhijie): Probably wrong. This may force prob to zero, when
+    # # the penalty coefficient is sufficiently large.
+    # nc = self.norm_penalty * tf.sqrt(
+    #     tf.reduce_sum(
+    #         tf.math.square(importance_weight * self.advantages)))
 
     self.surr = surr
     self.kl = kl

@@ -2,6 +2,8 @@ from __future__ import absolute_import, division, print_function
 
 from absl import app, flags, logging
 
+import csv
+import numpy as np
 import tensorflow as tf
 import tensorflow.compat.v1 as tfv1
 
@@ -9,6 +11,7 @@ tfv1.disable_eager_execution()
 
 import client.client as client_lib
 import env.halfcheetahv2 as halfcheetahv2_lib
+import env.reacherv2 as reacherv2_lib
 import model.fl.fedavg as fedavg_lib
 import model.fl.fedprox as fedprox_lib
 import model.fl.fedtrpo as fedtrpo_lib
@@ -24,23 +27,41 @@ flags.DEFINE_string("op", "Train", "Train or Test?")
 flags.DEFINE_integer("batch_size", 32, "Sample size for one batch.")
 flags.DEFINE_integer("num_epoches", 1, "Maximum number of training epoches.")
 flags.DEFINE_integer("num_clients", 10, "The number of clients.")
+flags.DEFINE_integer("n_local_iter", 200, "The number of local updates per round.")
+flags.DEFINE_string("heterogeneity_type", "init-state", "init-state or dynamics?")
 
-flags.DEFINE_float("lr", "1e-4", "Learning rate.")
-flags.DEFINE_float("mu", "1e-4", "Penalty coefficient for FedProx.")
+flags.DEFINE_float("lr", "1e-3", "Learning rate.")
+flags.DEFINE_float("mu", "1e-3", "Penalty coefficient for FedProx.")
 flags.DEFINE_string("fed", "FedAvg", "Federated Learning Algorithm.")
 flags.DEFINE_string("pg", "REINFORCE", "Policy Gradient Algorithm.")
+flags.DEFINE_string("env", "halfcheetah", "halfcheetah or reacher.")
 
 flags.DEFINE_bool("linear", False, "Use linear layer for MLP.")
 flags.DEFINE_integer("parallel", 10, "Parallelism for env rollout.")
 flags.DEFINE_float("svf_n_timestep", 1e6, "The number of timestep for estimating state visitation frequency.")
+flags.DEFINE_string("reward_history_fn", "", "The file stored reward history.")
+
+np.random.seed(0)
+tf.random.set_seed(0)
 
 
-def generate_heterogeneity(i):
-  # 30 clients.
-  interval = 0.01
-  x_left = -0.5 + interval * (10.0 / 3.0) * i
-  x_right = x_left + interval
-  return x_left, x_right
+def generate_halfcheetah_heterogeneity(i):
+  x_left, x_right = -0.005, 0.005
+  gravity = -9.81
+  if FLAGS.heterogeneity_type == 'init-state':
+    # 50 clients, and wider range of each initial state.
+    interval = 0.02
+    x_left = -0.5 + interval * 1.0 * i
+    # 30 clients, and standard range of each initial state.
+    interval = 0.01
+    x_left = -0.5 + interval * (10.0 / 3.0) * i
+    #
+    x_right = x_left + interval
+  if FLAGS.heterogeneity_type == 'dynamics':
+    low = -20
+    (i + 1) / num_total_clients
+    gravity = float(i + 1) / float(num_total_clients) * low
+  return x_left, x_right, gravity
 
   # Worth to try.
   interval = 0.01
@@ -56,6 +77,26 @@ def generate_heterogeneity(i):
   return x_left, x_right
 
 
+def generate_reacher_heterogeneity(i):
+  out = [[-0.2, 0.2], [-0.2, 0.2]]
+  if FLAGS.heterogeneity_type == 'init-state':
+    # 64 clients.
+    if i > 63:
+      raise NotImplementedError
+    j = i
+    if i in [0, 7, 56, 63]:
+      j = 1
+    row = j // 8
+    col = j % 8
+    x = -0.2 + row * 0.05
+    y = 0.2 - col * 0.05
+    out = [[x, x + 0.05], [y, y - 0.05]]
+    #
+  if FLAGS.heterogeneity_type == 'dynamics':
+    pass
+  return out
+
+
 def main(_):
   gpus = tf.config.experimental.list_physical_devices('GPU')
   logging.error(gpus)
@@ -67,7 +108,7 @@ def main(_):
       'clients_per_round': 5,
       'num_rounds': 100,
       # The more local iteration, the more likely for FedAvg to diverge.
-      'num_iter': 50,
+      'num_iter': FLAGS.n_local_iter,
       'timestep_per_batch': 2048,
       'max_steps': 10000,
       'eval_every': 1,
@@ -89,14 +130,23 @@ def main(_):
 
   # Create env before hand for saving memory.
   envs = []
+  # Keep this number low or we may fail to simulate the heterogeneity.
+  num_total_clients = 50
   num_total_clients = 30
+  num_total_clients = 64
   for i in range(num_total_clients):
     seed = int(i * 1e4)
-    x_left, x_right = generate_heterogeneity(i)
-    env = halfcheetahv2_lib.HalfCheetahV2(
-        seed=seed, qpos_high_low=[x_left, x_right],
-        qvel_high_low=[-0.005, 0.005])
-    logging.error([x_left, x_right])
+    if FLAGS.env == 'halfcheetah':
+      x_left, x_right, gravity = generate_halfcheetah_heterogeneity(i)
+      env = halfcheetahv2_lib.HalfCheetahV2(
+          seed=seed, qpos_high_low=[x_left, x_right],
+          qvel_high_low=[-0.005, 0.005], gravity=gravity)
+      logging.error([x_left, x_right])
+    if FLAGS.env == 'reacher':
+      qpos = generate_reacher_heterogeneity(i)
+      env = reacherv2_lib.ReacherV2(
+          seed=seed, qpos_high_low=qpos, qvel_high_low=[-0.005, 0.005])
+      logging.error(qpos)
     envs.append(env)
 
   # Set up clients.
@@ -121,15 +171,20 @@ def main(_):
           ), init_exp=0.5, final_exp=0.0, anneal_steps=1,
           critic=critic_lib.Critic(env.state_dim, 200, seed=seed)
       )
-    # agent.build()
 
     client = client_lib.Client(
-        i, 0, agent, env, num_test_epochs=10, parallel=FLAGS.parallel,
-        extra_features=set([]))
+        i, 0, agent, env, num_test_epochs=20, parallel=FLAGS.parallel,
+        filt=True, extra_features=set([]))
     fl.register(client)
 
   # Start FL training.
-  fl.train()
+  reward_history = fl.train()
+
+  # Saving logs.
+  with open(FLAGS.reward_history_fn, 'w', newline='') as csvfile:
+    w = csv.writer(csvfile, delimiter=',',
+                   quotechar='|', quoting=csv.QUOTE_MINIMAL)
+    w.writerows(reward_history)
 
 
 if __name__ == "__main__":

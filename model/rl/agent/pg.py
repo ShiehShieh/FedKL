@@ -44,5 +44,8 @@ class PolicyGradient(object):
       model_params = self.sess.run(tvars)
     return model_params
 
+  def reset_num_timestep_seen(self):
+    self.num_timestep_seen = 0.0
+
   def get_num_timestep_seen(self):
     return self.num_timestep_seen
