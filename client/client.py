@@ -179,3 +179,4 @@ class Client(object):
       mean_rewards = np.mean(self.episode_history)
       logger("Client {}, Iteration {}, Weight {}".format(self.cid, self.num_iter_seen, self.get_client_weight()))
       logger("Average reward for last {} episodes: {:.2f}".format(min(len(self.episode_history), self.episode_history.maxlen), mean_rewards))
+      logger("policy stat: {}".format(self.agent.stat()))

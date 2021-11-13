@@ -116,8 +116,10 @@ class TRPOActor(pg_lib.PolicyGradient):
                num_epoch=10,
                future_discount=0.99,
                kl_targ=0.003,
+               nm_targ=0.01,
                lam=0.98,
                beta=1.0,
+               sigma=1.0,
                importance_weight_cap=10.0,
                dropout_rate=0.1,
                seed=None,
@@ -134,16 +136,22 @@ class TRPOActor(pg_lib.PolicyGradient):
     self.num_epoch             = num_epoch
     self.dropout_rate          = dropout_rate
     self.kl_targ               = kl_targ
+    self.nm_targ               = nm_targ
     self.importance_weight_cap = importance_weight_cap
     self.env_sample            = env.env_sample
     self.output_types          = env.output_types
     self.output_shapes         = env.output_shapes
-    self.beta                  = beta
     self.lam                   = lam
     self.seed                  = seed
+    self.last_kl               = 0.0
+    self.last_nm               = 0.0
+    self.last_iw               = 1.0
 
     self.graph = tf.Graph()
     with self.graph.as_default():
+      self.beta                  = tf.Variable(initial_value=beta)
+      self.sigma                 = tf.Variable(initial_value=sigma)
+
       with tfv1.variable_scope(model_scope, default_name='trpo') as vs, tf.GradientTape(persistent=True) as gt:
 
         self.observations = tfv1.placeholder(
@@ -247,6 +255,8 @@ class TRPOActor(pg_lib.PolicyGradient):
     nc = tf.reduce_mean(
         self.norm_penalty * tf.math.abs(
             importance_weight - 1.0) * tf.math.abs(self.advantages))
+    nm_pen = nc
+    nm_pen = self.sigma * nc
     # # Approximating the norm using batch data.
     # # TODO(XIE,Zhijie): This advantage is not of \pi^t yet.
     # # NOTE(XIE,Zhijie): Probably wrong. This may force prob to zero, when
@@ -254,12 +264,22 @@ class TRPOActor(pg_lib.PolicyGradient):
     # nc = self.norm_penalty * tf.sqrt(
     #     tf.reduce_sum(
     #         tf.math.square(importance_weight * self.advantages)))
+    #
+    # This one is better.
+    #
+    # nc = self.norm_penalty * tf.sqrt(tf.reduce_sum(
+    #     tf.square(
+    #         2 * tf.math.abs(
+    #             prob_pi_t - prob_old_t) * tf.math.abs(self.advantages))
+    #     )
+    # )
 
     self.surr = surr
     self.kl = kl
-    self.importance_weight = importance_weight 
+    self.importance_weight = importance_weight
+    self.nc = nc
 
-    return -(surr - kl_pen - nc)
+    return -(surr - kl_pen - nm_pen)
 
   def build_opti_ops(self, prob_pi_t, pi_var, grad_tape):
     # compute gradients
@@ -282,12 +302,24 @@ class TRPOActor(pg_lib.PolicyGradient):
     return update_ops
 
   def adapt_kl_penalty_coefficient(self, kl):
+    beta = self.sess.run(self.beta)
     if kl < self.kl_targ / 1.5:
-      self.beta = self.beta / 2.0
+      beta = beta / 2.0
     elif kl > self.kl_targ * 1.5:
-      self.beta = self.beta * 2.0
-    self.beta = min(self.beta, 1e20)
-    self.beta = max(self.beta, 1e-20)
+      beta = beta * 2.0
+    beta = min(beta, 1e1)
+    beta = max(beta, 1e-20)
+    self.beta.load(beta, self.sess)
+
+  def adapt_nm_penalty_coefficient(self, nc):
+    sigma = self.sess.run(self.sigma)
+    if nc < self.nm_targ / 1.5:
+      sigma = sigma / 2.0
+    elif nc > self.nm_targ * 1.5:
+      sigma = sigma * 2.0
+    sigma = min(sigma, 1e1)
+    sigma = max(sigma, 1e-20)
+    self.sigma.load(sigma, self.sess)
 
   def sync_old_policy(self):
     self.sess.run(self.sync_op)
@@ -299,9 +331,19 @@ class TRPOActor(pg_lib.PolicyGradient):
     self.optimizer.set_params(
         self.sess, self.get_params(self.optimizer.get_var_list()))
 
+  def stat(self):
+    beta, sigma = self.sess.run([self.beta, self.sigma])
+    return {
+        'beta': beta,
+        'sigma': sigma,
+        'kl': self.last_kl,
+        'nm': self.last_nm,
+    }
+
   def fit(self, steps, logger=None):
     kl_list = []
     iw_list = []
+    nm_list = []
     self.num_timestep_seen += float(len(steps['observations']))
     # Train on data collected under old params.
     for e in range(self.num_epoch):
@@ -319,15 +361,16 @@ class TRPOActor(pg_lib.PolicyGradient):
         }
 
         # perform one update of training
-        _, global_step, kl, iw, surr = self.sess.run([
+        _, global_step, kl, iw, nc = self.sess.run([
             self.train_op,
             self.global_step,
             self.kl,
             self.importance_weight,
-            self.surr,
+            self.nc,
           ], feed_dict=m
         )
         self.adapt_kl_penalty_coefficient(np.mean(kl))
+        self.adapt_nm_penalty_coefficient(np.mean(nc))
 
         # Logging.
         # logging.error(m[self.advantages])
@@ -335,14 +378,21 @@ class TRPOActor(pg_lib.PolicyGradient):
         # logging.error("")
         kl_list.append(np.mean(kl))
         iw_list.append(np.mean(iw))
+        nm_list.append(np.mean(nc))
+
+    self.last_kl = np.mean(kl)
+    self.last_nm = np.mean(nc)
+    self.last_iw = np.mean(iw)
 
     # Iteration stat.
     return
     if logger:
       logger('# steps: %d' % len(steps['observations']))
-      logger('Average kl in this iteration: %.20e' % (np.mean(kl_list)))
-      logger('Average iw in this iteration: %.20e' % (np.mean(iw_list)))
-      logger('Final beta in this iteration: %.20e' % (self.beta))
+      logger('Average kl in this iteration: %.20e' % (self.last_kl))
+      logger('Average iw in this iteration: %.20e' % (self.last_iw))
+      logger('Average nm in this iteration: %.20e' % (self.last_nm))
+      logger('Final beta in this iteration: %.20e' % (self.sess.run(self.beta)))
+      logger('Final sigma in this iteration: %.20e' % (self.sess.run(self.sigma)))
 
   def act(self, observations, stochastic=True):
     m = {

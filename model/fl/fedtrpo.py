@@ -56,7 +56,8 @@ class FedTRPO(fedbase_lib.FederatedBase):
     reward_history = []
     logging.error('Training with {} workers per round ---'.format(self.clients_per_round))
     outer_loop = tqdm(
-        total=self.num_rounds, desc='Round', position=0)
+        total=self.num_rounds, desc='Round', position=0,
+        dynamic_ncols=True)
     for i in range(self.num_rounds):
       # test model
       if i % self.eval_every == 0:
@@ -80,7 +81,8 @@ class FedTRPO(fedbase_lib.FederatedBase):
 
       # communicate the latest model
       inner_loop = tqdm(
-          total=len(active_clients), desc='Client', position=1)
+          total=len(active_clients), desc='Client', position=1,
+          dynamic_ncols=True)
 
       # An experiment about the performance of FedTRPO if \rho are not confidential.
       # Remember to call distribute() before this step.

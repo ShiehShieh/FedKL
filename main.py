@@ -26,7 +26,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("op", "Train", "Train or Test?")
 flags.DEFINE_integer("batch_size", 32, "Sample size for one batch.")
 flags.DEFINE_integer("num_epoches", 1, "Maximum number of training epoches.")
-flags.DEFINE_integer("num_clients", 10, "The number of clients.")
+flags.DEFINE_integer("clients_per_round", 5, "The number of clients.")
 flags.DEFINE_integer("n_local_iter", 200, "The number of local updates per round.")
 flags.DEFINE_string("heterogeneity_type", "init-state", "init-state or dynamics?")
 
@@ -105,7 +105,7 @@ def main(_):
   lr = FLAGS.lr
   mu = FLAGS.mu
   params = {
-      'clients_per_round': 5,
+      'clients_per_round': FLAGS.clients_per_round,
       'num_rounds': 100,
       # The more local iteration, the more likely for FedAvg to diverge.
       'num_iter': FLAGS.n_local_iter,
@@ -168,6 +168,7 @@ def main(_):
               env, optimizer, model_scope='trpo_' + str(i), batch_size=64,
               num_epoch=10, future_discount=0.99, kl_targ=0.01, beta=1.0,
               lam=0.95, seed=seed, linear=FLAGS.linear, verbose=False,
+              nm_targ=0.001, sigma=1.0,
           ), init_exp=0.5, final_exp=0.0, anneal_steps=1,
           critic=critic_lib.Critic(env.state_dim, 200, seed=seed)
       )

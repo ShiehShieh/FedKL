@@ -65,3 +65,6 @@ class Agent(object):
 
   def sync_old_policy(self):
     return self.policy.sync_old_policy()
+
+  def stat(self):
+    return self.policy.stat()

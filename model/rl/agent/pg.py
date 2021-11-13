@@ -28,6 +28,9 @@ class PolicyGradient(object):
                      loss_beta, grad_tape):
     raise NotImplementedError
 
+  def stat(self):
+    raise NotImplementedError
+
   def set_params(self, model_params=None):
     if model_params is None:
       return
