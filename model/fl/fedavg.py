@@ -3,6 +3,7 @@ from __future__ import absolute_import, division, print_function
 from absl import app, flags, logging
 from tqdm import tqdm
 
+import sys
 import random
 import numpy as np
 
@@ -13,14 +14,15 @@ class FedAvg(fedbase_lib.FederatedBase):
 
   def __init__(self, clients_per_round, num_rounds, num_iter,
                timestep_per_batch, max_steps, eval_every,
-               drop_percent, verbose=False, **kwargs):
+               drop_percent, verbose=False, retry_min=-sys.float_info.max,
+               **kwargs):
     super(FedAvg, self).__init__(
         clients_per_round, num_rounds, num_iter, timestep_per_batch,
-        max_steps, eval_every,
-        drop_percent)
+        max_steps, eval_every, drop_percent, retry_min)
     self.verbose = verbose
 
   def train(self):
+    verbose = self.verbose
     logging.error('Training with {} workers per round ---'.format(self.clients_per_round))
     outer_loop = tqdm(
         total=self.num_rounds, desc='Round', position=0,
@@ -30,7 +32,9 @@ class FedAvg(fedbase_lib.FederatedBase):
       if i % self.eval_every == 0:
           stats = self.test()  # have distributed the latest model.
           rewards = stats[2]
-          outer_loop.write('At round {} expected future discounted reward: {}'.format(i, np.mean(rewards)))
+          outer_loop.write(
+              'At round {} expected future discounted reward: {}; # retry so far {}'.format(
+                  i, np.mean(rewards), self.get_num_retry()))
 
       indices, selected_clients = self.select_clients(i, num_clients=self.clients_per_round)  # uniform sampling
       np.random.seed(i)
@@ -46,14 +50,21 @@ class FedAvg(fedbase_lib.FederatedBase):
           total=len(active_clients), desc='Client', position=1,
           dynamic_ncols=True)
       self.distribute(active_clients)
-      for idx, c in enumerate(active_clients):  # simply drop the slow devices
-        c.reset_client_weight()
-        # Sequentially run train each client.
-        c.experiment(num_iter=self.num_iter,
-                     timestep_per_batch=self.timestep_per_batch,
-                     callback_before_fit=[c.sync_old_policy],
-                     logger=inner_loop.write if self.verbose else None)
-
+      for idx, c in enumerate(active_clients):
+        # Sequentially train each client.
+        self.retry(
+            [
+                lambda: self.distribute([c]),
+                lambda: c.reset_client_weight(),
+            ],
+            lambda: c.experiment(
+                num_iter=self.num_iter,
+                timestep_per_batch=self.timestep_per_batch,
+                callback_before_fit=[c.sync_old_policy],
+                logger=inner_loop.write if verbose else None,
+            ),
+            logger=inner_loop.write if verbose else None,
+        )
         # gather weights from client
         cws.append((c.get_client_weight(), c.get_params()))
 

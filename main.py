@@ -32,6 +32,7 @@ flags.DEFINE_string("heterogeneity_type", "init-state", "init-state or dynamics?
 
 flags.DEFINE_float("lr", "1e-3", "Learning rate.")
 flags.DEFINE_float("mu", "1e-3", "Penalty coefficient for FedProx.")
+flags.DEFINE_float("nm_targ", "1e-3", "norm penalty target of FedTRPO.")
 flags.DEFINE_string("fed", "FedAvg", "Federated Learning Algorithm.")
 flags.DEFINE_string("pg", "REINFORCE", "Policy Gradient Algorithm.")
 flags.DEFINE_string("env", "halfcheetah", "halfcheetah or reacher.")
@@ -40,6 +41,8 @@ flags.DEFINE_bool("linear", False, "Use linear layer for MLP.")
 flags.DEFINE_integer("parallel", 10, "Parallelism for env rollout.")
 flags.DEFINE_float("svf_n_timestep", 1e6, "The number of timestep for estimating state visitation frequency.")
 flags.DEFINE_string("reward_history_fn", "", "The file stored reward history.")
+
+flags.DEFINE_float("retry_min", -30, "local objective exceeded this cost will be considered as diverged.")
 
 np.random.seed(0)
 tf.random.set_seed(0)
@@ -115,6 +118,8 @@ def main(_):
       'drop_percent': 0.0,
       'verbose': True,
       'svf_n_timestep': FLAGS.svf_n_timestep,
+      # Tuned for Reacher-V2. Optional.
+      'retry_min': FLAGS.retry_min,
   }
   if FLAGS.fed == 'FedAvg':
     fl = fedavg_lib.FedAvg(**params)
@@ -168,7 +173,7 @@ def main(_):
               env, optimizer, model_scope='trpo_' + str(i), batch_size=64,
               num_epoch=10, future_discount=0.99, kl_targ=0.01, beta=1.0,
               lam=0.95, seed=seed, linear=FLAGS.linear, verbose=False,
-              nm_targ=0.001, sigma=1.0,
+              nm_targ=FLAGS.nm_targ, sigma=1.0,
           ), init_exp=0.5, final_exp=0.0, anneal_steps=1,
           critic=critic_lib.Critic(env.state_dim, 200, seed=seed)
       )
@@ -182,6 +187,7 @@ def main(_):
   reward_history = fl.train()
 
   # Saving logs.
+  logging.error('# retry: %d' % (fl.get_num_retry()))
   with open(FLAGS.reward_history_fn, 'w', newline='') as csvfile:
     w = csv.writer(csvfile, delimiter=',',
                    quotechar='|', quoting=csv.QUOTE_MINIMAL)

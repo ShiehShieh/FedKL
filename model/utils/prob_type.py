@@ -93,6 +93,32 @@ class DiagGauss(ProbType):
         std1 = prob1[:, self.d:]
         return tf.reduce_sum(tf.math.log(std1 / std0), axis=1) + tf.reduce_sum((tf.math.square(std0) + tf.math.square(mean0 - mean1)) / (2.0 * tf.math.square(std1)), axis=1) - 0.5 * self.d
 
+    def mahalanobis(self, prob0, prob1):
+      """
+      https://en.wikipedia.org/wiki/Bhattacharyya_distance
+      https://en.wikipedia.org/wiki/Mahalanobis_distance#Applications
+      """
+      mean0 = prob0[:, :self.d]
+      std0 = prob0[:, self.d:]
+      var0 = tf.square(std0)
+      mean1 = prob1[:, :self.d]
+      std1 = prob1[:, self.d:]
+      var1 = tf.square(std1)
+      mu = tf.expand_dims(mean0 - mean1, axis=1)
+      # Assuming that each dimension is independent of each other.
+      sigma = tf.linalg.inv(
+          (tf.linalg.diag(var0) + tf.linalg.diag(var1)) / 2.0)
+      return tf.squeeze(
+          tf.sqrt(
+              tf.maximum(
+                  tf.matmul(
+                      tf.matmul(mu, sigma),
+                      tf.transpose(mu, perm=[0,2,1])
+                  ), 1e-8,
+              )
+          ), axis=[1, 2]
+      )
+
     def entropy(self, prob):
         std_nd = prob[:, self.d:]
         return T.log(std_nd).sum(axis=1) + .5 * np.log(2 * np.pi * np.e) * self.d

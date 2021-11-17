@@ -119,7 +119,7 @@ class TRPOActor(pg_lib.PolicyGradient):
                nm_targ=0.01,
                lam=0.98,
                beta=1.0,
-               sigma=1.0,
+               sigma=0.0,
                importance_weight_cap=10.0,
                dropout_rate=0.1,
                seed=None,
@@ -143,9 +143,11 @@ class TRPOActor(pg_lib.PolicyGradient):
     self.output_shapes         = env.output_shapes
     self.lam                   = lam
     self.seed                  = seed
-    self.last_kl               = 0.0
-    self.last_nm               = 0.0
-    self.last_iw               = 1.0
+    self.avg_kl               = 0.0
+    self.avg_nm               = 0.0
+    self.avg_iw               = 1.0
+    self.max_kl               = 0.0
+    self.max_nm               = 0.0
 
     self.graph = tf.Graph()
     with self.graph.as_default():
@@ -175,6 +177,8 @@ class TRPOActor(pg_lib.PolicyGradient):
               self.num_actions, seed=seed, linear=linear)
           self.old_network = ContinuousPolicyNN(
               self.num_actions, seed=seed, linear=linear)
+          self.anchor_network = ContinuousPolicyNN(
+              self.num_actions, seed=seed, linear=linear)
           self.prob_type = prob_type_lib.DiagGauss(self.num_actions)
           self.sampled_prob = tfv1.placeholder(
               tf.dtypes.float32, [None, self.num_actions * 2],
@@ -184,20 +188,25 @@ class TRPOActor(pg_lib.PolicyGradient):
               self.num_actions, seed=seed)
           self.old_network = DiscretePolicyNN(
               self.num_actions, seed=seed)
+          self.anchor_network = DiscretePolicyNN(
+              self.num_actions, seed=seed)
           self.prob_type = prob_type_lib.Categorical(self.num_actions)
 
-        prob_pi, pi_var, prob_old = self.build_network(self.observations)
-        self.prob_old = tf.stop_gradient(prob_old)
-        prob_pi_t = self.build_loss(self.actions, prob_pi)
+        prob_pi, pi_var, prob_old, prob_anchor = self.build_network(
+            self.observations)
+        prob_pi_t = self.build_loss(
+            self.actions, prob_pi, prob_old, prob_anchor)
         train_op, pi_grad = self.build_opti_ops(prob_pi_t, pi_var, gt)
-        sync_op = self.build_sync_network()
+        sync_old_op, sync_anchor_op = self.build_network_sync()
 
         # Keep handy fields.
         self.train_op = train_op
         self.gradients = pi_grad
         self.prob_old = prob_old
+        self.prob_anchor = prob_anchor
         self.prob_pi = prob_pi
-        self.sync_op = sync_op
+        self.sync_old_op = sync_old_op
+        self.sync_anchor_op = sync_anchor_op
 
     self.sess = tfv1.Session(graph=self.graph, config=tfv1.ConfigProto(log_device_placement=verbose))
 
@@ -211,17 +220,19 @@ class TRPOActor(pg_lib.PolicyGradient):
     # Define trainable variables.
     self.global_step = tf.Variable(0, name="global_step")
     prob = self.policy_network.forward(observations)
-    prob_old = self.old_network.forward(observations)
+    old = tf.stop_gradient(self.old_network.forward(observations))
+    anchor = tf.stop_gradient(self.anchor_network.forward(observations))
     pi_var = self.policy_network.var()
-    return prob, pi_var, prob_old
+    return prob, pi_var, old, anchor
 
-  def build_loss(self, actions, prob_pi):
+  def build_loss(self, actions, prob_pi, prob_old, prob_anchor):
     # Epsilon for numerical stability.
     eps = 1e-8
     # Get prediction on t.
     prob_pi_t = self.prob_type.likelihood(actions, prob_pi)
     # prob_old_t = self.prob_type.likelihood(actions, self.sampled_prob)
-    prob_old_t = self.prob_type.likelihood(actions, self.prob_old)
+    prob_old_t = self.prob_type.likelihood(actions, prob_old)
+    prob_anchor_t = self.prob_type.likelihood(actions, prob_anchor)
 
     # Weight capping.
     importance_weight = tf.clip_by_value(
@@ -236,7 +247,7 @@ class TRPOActor(pg_lib.PolicyGradient):
     # surr = tf.reduce_mean(tf.minimum(surr1, surr2)) # PPO's pessimistic surrogate (L^CLIP)
     # kl = self.prob_type.kl(self.sampled_prob, prob_pi)
     kl = tf.reduce_mean(
-        self.prob_type.kl(self.prob_old, prob_pi)
+        self.prob_type.kl(prob_old, prob_pi)
     )
     # kl = self.prob_type.kl(tf.stop_gradient(prob_pi), prob_pi)
     kl_pen = self.beta * kl
@@ -252,11 +263,11 @@ class TRPOActor(pg_lib.PolicyGradient):
     #     )
     # )
     # nc = self.norm_penalty * tf.math.abs(surr)
-    nc = tf.reduce_mean(
-        self.norm_penalty * tf.math.abs(
-            importance_weight - 1.0) * tf.math.abs(self.advantages))
-    nm_pen = nc
-    nm_pen = self.sigma * nc
+    # nm = self.norm_penalty * tf.reduce_mean(tf.math.abs(
+    #     importance_weight - 1.0) * tf.math.abs(self.advantages))
+    nm = self.norm_penalty * tf.reduce_mean(self.prob_type.mahalanobis(
+        prob_anchor, prob_pi) * tf.math.abs(self.advantages))
+    nm_pen = self.sigma * nm
     # # Approximating the norm using batch data.
     # # TODO(XIE,Zhijie): This advantage is not of \pi^t yet.
     # # NOTE(XIE,Zhijie): Probably wrong. This may force prob to zero, when
@@ -277,7 +288,7 @@ class TRPOActor(pg_lib.PolicyGradient):
     self.surr = surr
     self.kl = kl
     self.importance_weight = importance_weight
-    self.nc = nc
+    self.nm = nm
 
     return -(surr - kl_pen - nm_pen)
 
@@ -292,14 +303,22 @@ class TRPOActor(pg_lib.PolicyGradient):
 
     return train_op, pi_grad
 
-  def build_sync_network(self):
-    update_ops =[]
+  def build_network_sync(self):
+    # For old network.
+    update_ops_old =[]
     new = self.policy_network.var()
     old = self.old_network.var()
     for i, n in enumerate(new):
       op = old[i].assign(n)
-      update_ops.append(op)
-    return update_ops
+      update_ops_old.append(op)
+    # For anchor network.
+    update_ops_anchor =[]
+    new = self.policy_network.var()
+    anchor = self.anchor_network.var()
+    for i, n in enumerate(new):
+      op = anchor[i].assign(n)
+      update_ops_anchor.append(op)
+    return update_ops_old, update_ops_anchor
 
   def adapt_kl_penalty_coefficient(self, kl):
     beta = self.sess.run(self.beta)
@@ -307,7 +326,7 @@ class TRPOActor(pg_lib.PolicyGradient):
       beta = beta / 2.0
     elif kl > self.kl_targ * 1.5:
       beta = beta * 2.0
-    beta = min(beta, 1e1)
+    beta = min(beta, 0.1 / self.kl_targ)
     beta = max(beta, 1e-20)
     self.beta.load(beta, self.sess)
 
@@ -317,12 +336,15 @@ class TRPOActor(pg_lib.PolicyGradient):
       sigma = sigma / 2.0
     elif nc > self.nm_targ * 1.5:
       sigma = sigma * 2.0
-    sigma = min(sigma, 1e1)
+    sigma = min(sigma, 0.1 / self.nm_targ)
     sigma = max(sigma, 1e-20)
     self.sigma.load(sigma, self.sess)
 
   def sync_old_policy(self):
-    self.sess.run(self.sync_op)
+    self.sess.run(self.sync_old_op)
+
+  def sync_anchor_policy(self):
+    self.sess.run(self.sync_anchor_op)
 
   def sync_optimizer(self):
     if not hasattr(self.optimizer, 'set_params'):
@@ -336,8 +358,10 @@ class TRPOActor(pg_lib.PolicyGradient):
     return {
         'beta': beta,
         'sigma': sigma,
-        'kl': self.last_kl,
-        'nm': self.last_nm,
+        'avg_kl': self.avg_kl,
+        'avg_nm': self.avg_nm,
+        'max_kl': self.max_kl,
+        'max_nm': self.max_nm,
     }
 
   def fit(self, steps, logger=None):
@@ -361,16 +385,16 @@ class TRPOActor(pg_lib.PolicyGradient):
         }
 
         # perform one update of training
-        _, global_step, kl, iw, nc = self.sess.run([
+        _, global_step, kl, iw, nm = self.sess.run([
             self.train_op,
             self.global_step,
             self.kl,
             self.importance_weight,
-            self.nc,
+            self.nm,
           ], feed_dict=m
         )
         self.adapt_kl_penalty_coefficient(np.mean(kl))
-        self.adapt_nm_penalty_coefficient(np.mean(nc))
+        self.adapt_nm_penalty_coefficient(np.mean(nm))
 
         # Logging.
         # logging.error(m[self.advantages])
@@ -378,21 +402,14 @@ class TRPOActor(pg_lib.PolicyGradient):
         # logging.error("")
         kl_list.append(np.mean(kl))
         iw_list.append(np.mean(iw))
-        nm_list.append(np.mean(nc))
-
-    self.last_kl = np.mean(kl)
-    self.last_nm = np.mean(nc)
-    self.last_iw = np.mean(iw)
+        nm_list.append(np.mean(nm))
 
     # Iteration stat.
-    return
-    if logger:
-      logger('# steps: %d' % len(steps['observations']))
-      logger('Average kl in this iteration: %.20e' % (self.last_kl))
-      logger('Average iw in this iteration: %.20e' % (self.last_iw))
-      logger('Average nm in this iteration: %.20e' % (self.last_nm))
-      logger('Final beta in this iteration: %.20e' % (self.sess.run(self.beta)))
-      logger('Final sigma in this iteration: %.20e' % (self.sess.run(self.sigma)))
+    self.avg_kl = np.mean(kl_list)
+    self.avg_nm = np.mean(nm_list)
+    self.avg_iw = np.mean(iw_list)
+    self.max_kl = np.max(kl_list)
+    self.max_nm = np.max(nm_list)
 
   def act(self, observations, stochastic=True):
     m = {

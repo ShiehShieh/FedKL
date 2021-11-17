@@ -4,14 +4,18 @@ from absl import app, flags, logging
 
 # from multiprocessing.dummy import Pool as ThreadPool
 
+import sys
 import random
 import numpy as np
+
+from mujoco_py.builder import MujocoException
 
 
 class FederatedBase(object):
 
   def __init__(self, clients_per_round, num_rounds, num_iter,
-               timestep_per_batch, max_steps, eval_every, drop_percent):
+               timestep_per_batch, max_steps, eval_every, drop_percent,
+               retry_min=-sys.float_info.max):
     self.clients = []
     self.clients_per_round = clients_per_round
     self.num_rounds = num_rounds
@@ -21,6 +25,8 @@ class FederatedBase(object):
     self.eval_every = eval_every
     self.drop_percent = drop_percent
     self.global_weights = None
+    self.retry_min = retry_min
+    self.num_retry = 0
 
   def register(self, client):
     self.clients.append(client)
@@ -65,3 +71,27 @@ class FederatedBase(object):
     ids = [c.cid for c in self.clients]
     groups = [c.group for c in self.clients]
     return ids, groups, rewards
+
+  def retry(self, fs, lamb, logger=None):
+    """
+    Retry the experiment when the local objective diverged. We're studying the
+    effect of system heterogeneity and statistical heterogeneity, so we don't
+    want to be borthered by local divergence. Here, we assume that we can always
+    converge the local objective.
+    """
+    i = -1
+    r = self.retry_min
+    while r <= self.retry_min:
+      for f in fs:
+        f()
+      try:
+        r = lamb()
+      except MujocoException as e:
+        if logger:
+          logger('%s' % e)
+      i += 1
+    self.num_retry += i
+    return r
+
+  def get_num_retry(self):
+    return self.num_retry

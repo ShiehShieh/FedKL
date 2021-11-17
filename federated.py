@@ -82,6 +82,7 @@ def main(_):
   batch_size = 64
   lr = 3e-4
   lr = 1e-3
+  lr = 5e-4
 
   # Create env before hand for saving memory.
   envs = []

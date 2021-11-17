@@ -50,6 +50,9 @@ class Client(object):
   def sync_old_policy(self):
     return self.agent.sync_old_policy()
 
+  def sync_anchor_policy(self):
+    return self.agent.sync_anchor_policy()
+
   def cleanup(self):
     self.env.cleanup()
 
@@ -175,8 +178,10 @@ class Client(object):
 
       self.episode_history.extend(episode_rewards)
 
+    mean_rewards = np.mean(self.episode_history)
     if logger:
-      mean_rewards = np.mean(self.episode_history)
       logger("Client {}, Iteration {}, Weight {}".format(self.cid, self.num_iter_seen, self.get_client_weight()))
       logger("Average reward for last {} episodes: {:.2f}".format(min(len(self.episode_history), self.episode_history.maxlen), mean_rewards))
       logger("policy stat: {}".format(self.agent.stat()))
+
+    return mean_rewards
