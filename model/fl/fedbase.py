@@ -80,8 +80,8 @@ class FederatedBase(object):
     if retry_min is None:
       retry_min = self.retry_min
     i = -1
-    r = self.retry_min
-    while r <= self.retry_min:
+    r = retry_min
+    while r <= retry_min:
       for f in fs:
         f()
       try:
