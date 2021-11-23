@@ -1,9 +1,0 @@
-syntax = "proto3";
-
-package frl.activity;
-
-// Next ID: 2
-message TKPGState {
-  // Latest hidden state used in CFN network.
-  repeated float hidden_state = 1;
-}

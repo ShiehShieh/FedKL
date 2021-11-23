@@ -2,7 +2,6 @@ from __future__ import absolute_import, division, print_function
 
 from absl import app, flags, logging
 
-import csv
 import numpy as np
 import tensorflow as tf
 import tensorflow.compat.v1 as tfv1
@@ -28,11 +27,13 @@ flags.DEFINE_integer("batch_size", 32, "Sample size for one batch.")
 flags.DEFINE_integer("num_epoches", 1, "Maximum number of training epoches.")
 flags.DEFINE_integer("clients_per_round", 5, "The number of clients.")
 flags.DEFINE_integer("n_local_iter", 200, "The number of local updates per round.")
-flags.DEFINE_string("heterogeneity_type", "init-state", "init-state or dynamics?")
+flags.DEFINE_string("heterogeneity_type", "init-state", "iid, init-state or dynamics?")
 
-flags.DEFINE_float("lr", "1e-3", "Learning rate.")
-flags.DEFINE_float("mu", "1e-3", "Penalty coefficient for FedProx.")
-flags.DEFINE_float("nm_targ", "1e-3", "norm penalty target of FedTRPO.")
+flags.DEFINE_float("lr", 1e-3, "Learning rate.")
+flags.DEFINE_float("mu", 1e-3, "Penalty coefficient for FedProx.")
+flags.DEFINE_float("nm_targ", 1e-3, "norm penalty target of FedTRPO.")
+flags.DEFINE_bool("has_global_svf", False, "If true, client has access to the global state visitation frequency.")
+flags.DEFINE_string("distance_metric", 'tv', "One of tv, mahalanobis and wasserstein.")
 flags.DEFINE_string("fed", "FedAvg", "Federated Learning Algorithm.")
 flags.DEFINE_string("pg", "REINFORCE", "Policy Gradient Algorithm.")
 flags.DEFINE_string("env", "halfcheetah", "halfcheetah or reacher.")
@@ -51,6 +52,8 @@ tf.random.set_seed(0)
 def generate_halfcheetah_heterogeneity(i):
   x_left, x_right = -0.005, 0.005
   gravity = -9.81
+  if FLAGS.heterogeneity_type == 'iid':
+    pass
   if FLAGS.heterogeneity_type == 'init-state':
     # 50 clients, and wider range of each initial state.
     interval = 0.02
@@ -82,6 +85,8 @@ def generate_halfcheetah_heterogeneity(i):
 
 def generate_reacher_heterogeneity(i):
   out = [[-0.2, 0.2], [-0.2, 0.2]]
+  if FLAGS.heterogeneity_type == 'iid':
+    pass
   if FLAGS.heterogeneity_type == 'init-state':
     # 64 clients.
     if i > 63:
@@ -93,10 +98,12 @@ def generate_reacher_heterogeneity(i):
     col = j % 8
     x = -0.2 + row * 0.05
     y = 0.2 - col * 0.05
-    out = [[x, x + 0.05], [y, y - 0.05]]
+    out = [[x, x + 0.05], [y - 0.05, y]]
     #
   if FLAGS.heterogeneity_type == 'dynamics':
-    pass
+    raise NotImplementedError
+  if out[0][0] > out[0][1] or out[1][0] > out[1][1]:
+    raise NotImplementedError
   return out
 
 
@@ -107,31 +114,36 @@ def main(_):
   # Federated Learning Experiments.
   lr = FLAGS.lr
   mu = FLAGS.mu
-  params = {
+  fl_params = {
       'clients_per_round': FLAGS.clients_per_round,
-      'num_rounds': 100,
+      'num_rounds': 200,
       # The more local iteration, the more likely for FedAvg to diverge.
       'num_iter': FLAGS.n_local_iter,
       'timestep_per_batch': 2048,
       'max_steps': 10000,
       'eval_every': 1,
       'drop_percent': 0.0,
+      'has_global_svf': FLAGS.has_global_svf,
       'verbose': True,
       'svf_n_timestep': FLAGS.svf_n_timestep,
       # Tuned for Reacher-V2. Optional.
       'retry_min': FLAGS.retry_min,
+      # CSV for saving reward_history.
+      'reward_history_fn': FLAGS.reward_history_fn,
   }
+  sigma = 0.0
   if FLAGS.fed == 'FedAvg':
-    fl = fedavg_lib.FedAvg(**params)
+    fl = fedavg_lib.FedAvg(**fl_params)
     # opt_class = lambda: tf.optimizers.Adam(learning_rate=lr)
     opt_class = lambda: tf.optimizers.SGD(learning_rate=lr)
   elif FLAGS.fed == 'FedProx':
-    fl = fedprox_lib.FedProx(**params)
+    fl = fedprox_lib.FedProx(**fl_params)
     opt_class = lambda: pgd_lib.PerturbedGradientDescent(
         learning_rate=lr, mu=mu)
   elif FLAGS.fed == 'FedTRPO':
-    fl = fedtrpo_lib.FedTRPO(**params)
+    fl = fedtrpo_lib.FedTRPO(**fl_params)
     opt_class = lambda: tf.optimizers.SGD(learning_rate=lr)
+    sigma = 1.0
 
   # Create env before hand for saving memory.
   envs = []
@@ -173,7 +185,8 @@ def main(_):
               env, optimizer, model_scope='trpo_' + str(i), batch_size=64,
               num_epoch=10, future_discount=0.99, kl_targ=0.01, beta=1.0,
               lam=0.95, seed=seed, linear=FLAGS.linear, verbose=False,
-              nm_targ=FLAGS.nm_targ, sigma=1.0,
+              nm_targ=FLAGS.nm_targ, sigma=sigma,
+              distance_metric=FLAGS.distance_metric,
           ), init_exp=0.5, final_exp=0.0, anneal_steps=1,
           critic=critic_lib.Critic(env.state_dim, 200, seed=seed)
       )
@@ -186,12 +199,8 @@ def main(_):
   # Start FL training.
   reward_history = fl.train()
 
-  # Saving logs.
+  # Logging.
   logging.error('# retry: %d' % (fl.get_num_retry()))
-  with open(FLAGS.reward_history_fn, 'w', newline='') as csvfile:
-    w = csv.writer(csvfile, delimiter=',',
-                   quotechar='|', quoting=csv.QUOTE_MINIMAL)
-    w.writerows(reward_history)
 
 
 if __name__ == "__main__":

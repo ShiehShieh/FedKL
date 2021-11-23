@@ -122,6 +122,7 @@ class TRPOActor(pg_lib.PolicyGradient):
                sigma=0.0,
                importance_weight_cap=10.0,
                dropout_rate=0.1,
+               distance_metric='mahalanobis',
                seed=None,
                linear=False,
                verbose=True):
@@ -143,16 +144,22 @@ class TRPOActor(pg_lib.PolicyGradient):
     self.output_shapes         = env.output_shapes
     self.lam                   = lam
     self.seed                  = seed
-    self.avg_kl               = 0.0
-    self.avg_nm               = 0.0
-    self.avg_iw               = 1.0
-    self.max_kl               = 0.0
-    self.max_nm               = 0.0
+    self.distance_metric       = distance_metric
+    self.avg_kl                = 0.0
+    self.avg_nm                = 0.0
+    self.avg_iw                = 1.0
+    self.max_kl                = 0.0
+    self.max_nm                = 0.0
+    self.max_ad                = 0.0
+    self.is_norm_penalized     = True
+
+    if sigma == 0.0:
+      self.is_norm_penalized = False
 
     self.graph = tf.Graph()
     with self.graph.as_default():
-      self.beta                  = tf.Variable(initial_value=beta)
-      self.sigma                 = tf.Variable(initial_value=sigma)
+      self.beta = tf.Variable(initial_value=beta)
+      self.sigma = tf.Variable(initial_value=sigma)
 
       with tfv1.variable_scope(model_scope, default_name='trpo') as vs, tf.GradientTape(persistent=True) as gt:
 
@@ -254,36 +261,25 @@ class TRPOActor(pg_lib.PolicyGradient):
 
     # Norm constraint.
     svf = self.state_visitation_frequency
-    # Assuming that the current update will not affect other state.
-    # tf.reduce_mean(
-    #     importance_weight * (
-    #         self.advantages - self.norm_penalty * tf.math.abs(
-    #             self.advantages
-    #         )
-    #     )
-    # )
-    # nc = self.norm_penalty * tf.math.abs(surr)
-    # nm = self.norm_penalty * tf.reduce_mean(tf.math.abs(
-    #     importance_weight - 1.0) * tf.math.abs(self.advantages))
-    nm = self.norm_penalty * tf.reduce_mean(self.prob_type.mahalanobis(
-        prob_anchor, prob_pi) * tf.math.abs(self.advantages))
+    # NOTE(XIE.Zhijie): Assuming that the current update will not affect other
+    # state.
+    #
+    # TODO(XIE,Zhijie): This advantage is not of \pi^t yet.
+    distance_metric = None
+    if self.distance_metric == 'mahalanobis':
+      distance_metric = self.prob_type.mahalanobis
+    elif self.distance_metric == 'wasserstein':
+      distance_metric = self.prob_type.wasserstein
+    elif self.distance_metric == 'tv':
+      distance_metric = self.prob_type.tv
+    else:
+      raise NotImplementedError
+    # nm = self.norm_penalty * tf.reduce_mean(distance_metric(
+    #     prob_anchor, prob_pi) * tf.math.abs(self.advantages))
+    nm = tf.reduce_mean(distance_metric(prob_anchor, prob_pi))
     nm_pen = self.sigma * nm
-    # # Approximating the norm using batch data.
-    # # TODO(XIE,Zhijie): This advantage is not of \pi^t yet.
-    # # NOTE(XIE,Zhijie): Probably wrong. This may force prob to zero, when
-    # # the penalty coefficient is sufficiently large.
-    # nc = self.norm_penalty * tf.sqrt(
-    #     tf.reduce_sum(
-    #         tf.math.square(importance_weight * self.advantages)))
-    #
-    # This one is better.
-    #
-    # nc = self.norm_penalty * tf.sqrt(tf.reduce_sum(
-    #     tf.square(
-    #         2 * tf.math.abs(
-    #             prob_pi_t - prob_old_t) * tf.math.abs(self.advantages))
-    #     )
-    # )
+    if not self.is_norm_penalized:
+      nm_pen = 0.0
 
     self.surr = surr
     self.kl = kl
@@ -320,23 +316,27 @@ class TRPOActor(pg_lib.PolicyGradient):
       update_ops_anchor.append(op)
     return update_ops_old, update_ops_anchor
 
-  def adapt_kl_penalty_coefficient(self, kl):
+  def adapt_kl_penalty_coefficient(self, kl, scale):
     beta = self.sess.run(self.beta)
+    if beta == 0.0:
+      return
     if kl < self.kl_targ / 1.5:
       beta = beta / 2.0
     elif kl > self.kl_targ * 1.5:
       beta = beta * 2.0
-    beta = min(beta, 0.1 / self.kl_targ)
+    beta = min(beta, scale / self.kl_targ)
     beta = max(beta, 1e-20)
     self.beta.load(beta, self.sess)
 
-  def adapt_nm_penalty_coefficient(self, nc):
+  def adapt_nm_penalty_coefficient(self, nc, scale):
+    if not self.is_norm_penalized:
+      return
     sigma = self.sess.run(self.sigma)
     if nc < self.nm_targ / 1.5:
       sigma = sigma / 2.0
     elif nc > self.nm_targ * 1.5:
       sigma = sigma * 2.0
-    sigma = min(sigma, 0.1 / self.nm_targ)
+    sigma = min(sigma, scale / self.nm_targ)
     sigma = max(sigma, 1e-20)
     self.sigma.load(sigma, self.sess)
 
@@ -362,6 +362,7 @@ class TRPOActor(pg_lib.PolicyGradient):
         'avg_nm': self.avg_nm,
         'max_kl': self.max_kl,
         'max_nm': self.max_nm,
+        'max_ad': self.max_ad,
     }
 
   def fit(self, steps, logger=None):
@@ -369,6 +370,7 @@ class TRPOActor(pg_lib.PolicyGradient):
     iw_list = []
     nm_list = []
     self.num_timestep_seen += float(len(steps['observations']))
+    scale = np.max(steps['advantages'])
     # Train on data collected under old params.
     for e in range(self.num_epoch):
       steps = utils_lib.shuffle_map(steps)
@@ -393,13 +395,9 @@ class TRPOActor(pg_lib.PolicyGradient):
             self.nm,
           ], feed_dict=m
         )
-        self.adapt_kl_penalty_coefficient(np.mean(kl))
-        self.adapt_nm_penalty_coefficient(np.mean(nm))
+        self.adapt_kl_penalty_coefficient(np.mean(kl), scale)
+        self.adapt_nm_penalty_coefficient(np.mean(nm), scale)
 
-        # Logging.
-        # logging.error(m[self.advantages])
-        # logging.error('%.20e, %.20e, %.20e' % (np.mean(kl), self.beta, np.mean(surr)))
-        # logging.error("")
         kl_list.append(np.mean(kl))
         iw_list.append(np.mean(iw))
         nm_list.append(np.mean(nm))
@@ -410,6 +408,7 @@ class TRPOActor(pg_lib.PolicyGradient):
     self.avg_iw = np.mean(iw_list)
     self.max_kl = np.max(kl_list)
     self.max_nm = np.max(nm_list)
+    self.max_ad = np.max(steps['advantages'])
 
   def act(self, observations, stochastic=True):
     m = {

@@ -93,6 +93,54 @@ class DiagGauss(ProbType):
         std1 = prob1[:, self.d:]
         return tf.reduce_sum(tf.math.log(std1 / std0), axis=1) + tf.reduce_sum((tf.math.square(std0) + tf.math.square(mean0 - mean1)) / (2.0 * tf.math.square(std1)), axis=1) - 0.5 * self.d
 
+    def tv(self, prob0, prob1):
+      """
+      In general, there is no known closed form for the total variation distance
+      between two multivarate normal distribution, but the following references
+      provide us a lower bound and upper bound for that.
+
+      https://arxiv.org/pdf/1810.08693.pdf
+      https://en.wikipedia.org/wiki/Total_variation
+      """
+      mean0 = prob0[:, :self.d]
+      std0 = prob0[:, self.d:]
+      var0 = tf.square(std0)
+      mean1 = prob1[:, :self.d]
+      std1 = prob1[:, self.d:]
+      var1 = tf.square(std1)
+
+      def _tv(mu1, sigma1, mu2, sigma2):
+        v = tf.expand_dims(mu1 - mu2, axis=1)
+        t1 = tf.abs(tf.matmul(
+            tf.matmul(v, sigma1 - sigma2), tf.transpose(v, perm=[0,2,1])
+        )) / tf.maximum(tf.matmul(
+            tf.matmul(v, sigma1), tf.transpose(v, perm=[0,2,1])
+        ), 1e-8)
+        t2 = tf.matmul(v, tf.transpose(v, perm=[0,2,1])) / tf.sqrt(
+            tf.maximum(
+                tf.matmul(
+                    tf.matmul(v, sigma1),
+                    tf.transpose(v, perm=[0,2,1])
+                ), 1e-8,
+            )
+        )
+        t3 = tf.sqrt(
+            tf.maximum(
+                tf.linalg.trace(tf.square(
+                    tf.matmul(
+                        tf.linalg.inv(sigma1), sigma2
+                    ) - tf.eye(self.d, batch_shape=[tf.shape(mu1)[0]])
+                )), 1e-8
+            )
+        )
+        return tf.maximum(tf.maximum(t1, t2), t3)
+
+      tv = _tv(mean0, tf.linalg.diag(var0), mean1, tf.linalg.diag(var1))
+      dom = tf.minimum(1.0, tv)
+      lower = 1.0 / 200.0 * dom
+      upper = 9.0 / 2.0 * dom
+      return upper
+
     def mahalanobis(self, prob0, prob1):
       """
       https://en.wikipedia.org/wiki/Bhattacharyya_distance
@@ -106,8 +154,7 @@ class DiagGauss(ProbType):
       var1 = tf.square(std1)
       mu = tf.expand_dims(mean0 - mean1, axis=1)
       # Assuming that each dimension is independent of each other.
-      sigma = tf.linalg.inv(
-          (tf.linalg.diag(var0) + tf.linalg.diag(var1)) / 2.0)
+      sigma = tf.linalg.inv(tf.linalg.diag((var0 + var1) / 2.0))
       return tf.squeeze(
           tf.sqrt(
               tf.maximum(
@@ -118,6 +165,22 @@ class DiagGauss(ProbType):
               )
           ), axis=[1, 2]
       )
+
+    def wasserstein(self, prob0, prob1):
+      """
+      https://en.wikipedia.org/wiki/Wasserstein_metric
+      """
+      mean0 = prob0[:, :self.d]
+      std0 = prob0[:, self.d:]
+      var0 = tf.square(std0)
+      mean1 = prob1[:, :self.d]
+      std1 = prob1[:, self.d:]
+      var1 = tf.square(std1)
+      n = tf.square(tf.linalg.norm(mean0 - mean1, ord=2, axis=1))
+      sqrtc2 = tf.sqrt(var1)
+      c = var0 + var1 - 2 * tf.sqrt(
+          tf.matmul(tf.matmul(sqrtc2, var0), sqrtc2))
+      return n + tf.linalg.trace(c)
 
     def entropy(self, prob):
         std_nd = prob[:, self.d:]

@@ -15,15 +15,17 @@ class FedProx(fedbase_lib.FederatedBase):
   def __init__(self, clients_per_round, num_rounds, num_iter,
                timestep_per_batch, max_steps, eval_every,
                drop_percent, verbose=False, retry_min=-sys.float_info.max,
-               **kwargs):
+               reward_history_fn='', **kwargs):
     super(FedProx, self).__init__(
         clients_per_round, num_rounds, num_iter, timestep_per_batch,
-        max_steps, eval_every, drop_percent, retry_min)
+        max_steps, eval_every, drop_percent, retry_min, reward_history_fn)
     self.verbose = verbose
 
   def train(self):
-    verbose = self.verbose
     logging.error('Training with {} workers per round ---'.format(self.clients_per_round))
+    verbose = self.verbose
+    retry_min = self.retry_min
+    reward_history = []
     outer_loop = tqdm(
         total=self.num_rounds, desc='Round', position=0,
         dynamic_ncols=True)
@@ -32,6 +34,9 @@ class FedProx(fedbase_lib.FederatedBase):
       if i % self.eval_every == 0:
           stats = self.test()  # have distributed the latest model.
           rewards = stats[2]
+          retry_min = np.mean(rewards)
+          reward_history.append(rewards)
+          self.log_csv(reward_history)
           outer_loop.write(
               'At round {} expected future discounted reward: {}; # retry so far {}'.format(
                   i, np.mean(rewards), self.get_num_retry()))
@@ -58,6 +63,8 @@ class FedProx(fedbase_lib.FederatedBase):
                 lambda: c.reset_client_weight(),
                 # sync local (global) params to local optimizer.
                 lambda: c.sync_optimizer(),
+                # sync local (global) params to local anchor.
+                lambda: c.sync_anchor_policy(),
             ],
             lambda: c.experiment(
                 num_iter=self.num_iter,
@@ -65,7 +72,9 @@ class FedProx(fedbase_lib.FederatedBase):
                 callback_before_fit=[c.sync_old_policy],
                 logger=inner_loop.write if verbose else None,
             ),
+            max_retry=100 if i > 3 else 0,
             logger=inner_loop.write if verbose else None,
+            retry_min=retry_min - 0.5 * np.abs(retry_min),
         )
 
         # gather weights from client
@@ -83,6 +92,7 @@ class FedProx(fedbase_lib.FederatedBase):
     # final test model
     stats = self.test()
     rewards = stats[2]
-    # self.metrics.accuracies.append(stats)
-    # tqdm.write('At round {} accuracy: {}'.format(self.num_rounds, np.sum(stats[3]) * 1.0 / np.sum(stats[2])))
-    logging.error('At round {} total reward received: {}'.format(self.num_rounds, np.mean(rewards)))
+    reward_history.append(rewards)
+    self.log_csv(reward_history)
+    outer_loop.write('At round {} total reward received: {}'.format(self.num_rounds, np.mean(rewards)))
+    return reward_history

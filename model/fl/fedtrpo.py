@@ -13,16 +13,20 @@ import model.fl.fedbase as fedbase_lib
 class FedTRPO(fedbase_lib.FederatedBase):
 
   def __init__(self, clients_per_round, num_rounds, num_iter,
-               timestep_per_batch, max_steps, eval_every,
-               drop_percent, verbose=False, svf_n_timestep=1e6,
-               retry_min=-sys.float_info.max, **kwargs):
+               timestep_per_batch, max_steps, eval_every, drop_percent,
+               verbose=False, svf_n_timestep=1e6, has_global_svf=False,
+               retry_min=-sys.float_info.max, reward_history_fn='',
+               **kwargs):
     super(FedTRPO, self).__init__(
         clients_per_round, num_rounds, num_iter, timestep_per_batch,
-        max_steps, eval_every, drop_percent, retry_min)
+        max_steps, eval_every, drop_percent, retry_min, reward_history_fn)
     self.verbose = verbose
     self.svf_n_timestep = svf_n_timestep
+    self.has_global_svf = has_global_svf
 
   def get_state_visitation_frequency(self, active_clients, logger=None):
+    return None, [None] * len(active_clients)
+
     svf_ms = []
     for idx, c in enumerate(active_clients):
       c.enable_svf(self.svf_n_timestep)
@@ -44,19 +48,23 @@ class FedTRPO(fedbase_lib.FederatedBase):
       for k, v in svf_m.items():
         j = full_keys[k]
         svfs[i][j] += v
-    # svfs = svfs / np.sum(svfs, axis=1)[:, np.newaxis]
-    avg = np.mean(svfs, axis=0)
-    norm_penalties = np.linalg.norm(avg - svfs, ord=2, axis=1)
-    # np.sqrt(np.mean(np.square(np.linalg.norm(svfs, ord=2, axis=1))))
+
+    if self.has_global_svf:
+      avg = np.mean(svfs, axis=0)
+      norm_penalties = np.linalg.norm(avg - svfs, ord=2, axis=1)
+    else:
+      norm_penalties = np.linalg.norm(svfs, ord=2, axis=1)
+
     if logger:
       logger('norm_penalties shape %s, l2 norm: %s' % (
           norm_penalties.shape, norm_penalties))
     return svfs, norm_penalties
 
   def train(self):
-    verbose = self.verbose
-    reward_history = []
     logging.error('Training with {} workers per round ---'.format(self.clients_per_round))
+    verbose = self.verbose
+    retry_min = self.retry_min
+    reward_history = []
     outer_loop = tqdm(
         total=self.num_rounds, desc='Round', position=0,
         dynamic_ncols=True)
@@ -65,7 +73,9 @@ class FedTRPO(fedbase_lib.FederatedBase):
       if i % self.eval_every == 0:
           stats = self.test()  # have distributed the latest model.
           rewards = stats[2]
+          retry_min = np.mean(rewards)
           reward_history.append(rewards)
+          self.log_csv(reward_history)
           outer_loop.write(
               'At round {} expected future discounted reward: {}; # retry so far {}'.format(
                   i, np.mean(rewards), self.get_num_retry()))
@@ -114,9 +124,11 @@ class FedTRPO(fedbase_lib.FederatedBase):
                 timestep_per_batch=self.timestep_per_batch,
                 callback_before_fit=[c.sync_old_policy],
                 logger=inner_loop.write if verbose else None,
-                norm_penalty=norm_penalties[idx:idx + 1]
+                # norm_penalty=norm_penalties[idx:idx + 1],
             ),
+            max_retry=100 if i > 3 else 0,
             logger=inner_loop.write if verbose else None,
+            retry_min=retry_min - 0.5 * np.abs(retry_min),
         )
         # gather weights from client
         cws.append((c.get_client_weight(), c.get_params()))
@@ -140,5 +152,6 @@ class FedTRPO(fedbase_lib.FederatedBase):
     stats = self.test()
     rewards = stats[2]
     reward_history.append(rewards)
-    logging.error('At round {} total reward received: {}'.format(self.num_rounds, np.mean(rewards)))
+    self.log_csv(reward_history)
+    outer_loop.write('At round {} total reward received: {}'.format(self.num_rounds, np.mean(rewards)))
     return reward_history

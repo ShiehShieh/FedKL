@@ -138,5 +138,6 @@ bazel-*
 # numpy.
 *.npy
 
-# Images.
+# Images, Datum.
 *.png
+*.csv

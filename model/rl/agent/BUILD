@@ -54,11 +54,5 @@ py_library(
     name = "critic",
     srcs = ["critic.py"],
     deps = [
-        ":discrete_deepq",
     ],
-)
-
-py_library(
-    name = "discrete_deepq",
-    srcs = ["discrete_deepq.py"],
 )

@@ -151,11 +151,6 @@ class Client(object):
   def experiment(self, num_iter, timestep_per_batch,
                  callback_before_fit=[], logger=None, norm_penalty=None):
     svf = np.zeros(shape=(1,))
-    if self.use_svf and norm_penalty is None:
-      d = self.get_state_visitation_frequency()
-      if logger:
-        logger('# state %d, l2 norm: %.10e' % (
-            len(d), np.linalg.norm(d.values(), ord=2)))
     if norm_penalty is None:
       norm_penalty = np.zeros(shape=(1,))
 

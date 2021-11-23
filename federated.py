@@ -80,9 +80,10 @@ def main(_):
   timestep_per_batch = 2048
   num_epoch = 10
   batch_size = 64
-  lr = 3e-4
   lr = 1e-3
   lr = 5e-4
+  lr = 3e-4
+  lr = 1e-4
 
   # Create env before hand for saving memory.
   envs = []
@@ -97,6 +98,7 @@ def main(_):
     # env = humanoidv2_lib.HumanoidV2(seed)
     # env = walker2dv2_lib.Walker2dV2(seed)
     # env = halfcheetahv2_lib.HalfCheetahV2(seed)
+    env = reacherv2_lib.ReacherV2(seed, qpos_high_low=[[0.10000000000000003, 0.15000000000000002], [0.10, 0.15]])
     env = reacherv2_lib.ReacherV2(seed)
     envs.append(env)
 
@@ -122,7 +124,7 @@ def main(_):
                                 lam=0.95,
                                 importance_weight_cap=100,
                                 dropout_rate=0.05,
-                                linear=True,
+                                linear=False,
                                 verbose=False)
     agent = agent_lib.Agent(
         str(i), policy, init_exp=0.1, final_exp=0.0, anneal_steps=1,

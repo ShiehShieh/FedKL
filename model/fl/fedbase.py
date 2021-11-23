@@ -2,9 +2,8 @@ from __future__ import absolute_import, division, print_function
 
 from absl import app, flags, logging
 
-# from multiprocessing.dummy import Pool as ThreadPool
-
 import sys
+import csv
 import random
 import numpy as np
 
@@ -15,7 +14,7 @@ class FederatedBase(object):
 
   def __init__(self, clients_per_round, num_rounds, num_iter,
                timestep_per_batch, max_steps, eval_every, drop_percent,
-               retry_min=-sys.float_info.max):
+               retry_min=-sys.float_info.max, reward_history_fn=''):
     self.clients = []
     self.clients_per_round = clients_per_round
     self.num_rounds = num_rounds
@@ -27,6 +26,7 @@ class FederatedBase(object):
     self.global_weights = None
     self.retry_min = retry_min
     self.num_retry = 0
+    self.reward_history_fn = reward_history_fn
 
   def register(self, client):
     self.clients.append(client)
@@ -61,8 +61,6 @@ class FederatedBase(object):
   def test(self, clients=None):
     self.distribute(self.clients)
     rewards = []
-    # pool = ThreadPool(len(self.clients))
-    # rewards = pool.map(lambda c: c.test(), self.clients)
     if clients is None:
       clients = self.clients
     for c in clients:
@@ -72,26 +70,46 @@ class FederatedBase(object):
     groups = [c.group for c in self.clients]
     return ids, groups, rewards
 
-  def retry(self, fs, lamb, logger=None):
+  def retry(self, fs, lamb, max_retry=100, logger=None, retry_min=None):
     """
     Retry the experiment when the local objective diverged. We're studying the
     effect of system heterogeneity and statistical heterogeneity, so we don't
     want to be borthered by local divergence. Here, we assume that we can always
     converge the local objective.
     """
+    if retry_min is None:
+      retry_min = self.retry_min
     i = -1
     r = self.retry_min
     while r <= self.retry_min:
       for f in fs:
         f()
       try:
+        i += 1
         r = lamb()
       except MujocoException as e:
         if logger:
           logger('%s' % e)
-      i += 1
+        if i >= max_retry:
+          raise e
+      except Exception as e:
+        if logger:
+          logger('%s' % e)
+        if i >= max_retry:
+          raise e
+      finally:
+        if i >= max_retry:
+          break
     self.num_retry += i
     return r
 
   def get_num_retry(self):
     return self.num_retry
+
+  def log_csv(self, reward_history):
+    if len(self.reward_history_fn) == 0:
+      raise NotImplementedError('no reward_history_fn provided')
+    with open(self.reward_history_fn, 'w', newline='') as csvfile:
+      w = csv.writer(csvfile, delimiter=',',
+                     quotechar='|', quoting=csv.QUOTE_MINIMAL)
+      w.writerows(reward_history)
