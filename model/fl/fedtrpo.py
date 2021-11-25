@@ -126,9 +126,9 @@ class FedTRPO(fedbase_lib.FederatedBase):
                 logger=inner_loop.write if verbose else None,
                 # norm_penalty=norm_penalties[idx:idx + 1],
             ),
-            max_retry=100 if i > 3 else 0,
+            max_retry=5 if i > 3 else 0,
             logger=inner_loop.write if verbose else None,
-            retry_min=retry_min - 0.5 * np.abs(retry_min),
+            retry_min=retry_min - np.abs(retry_min),
         )
         # gather weights from client
         cws.append((c.get_client_weight(), c.get_params()))
