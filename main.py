@@ -27,7 +27,8 @@ flags.DEFINE_integer("batch_size", 32, "Sample size for one batch.")
 flags.DEFINE_integer("num_epoches", 1, "Maximum number of training epoches.")
 flags.DEFINE_integer("clients_per_round", 5, "The number of clients.")
 flags.DEFINE_integer("n_local_iter", 200, "The number of local updates per round.")
-flags.DEFINE_string("heterogeneity_type", "init-state", "iid, init-state or dynamics?")
+flags.DEFINE_string("heterogeneity_type", "init-state", "iid, init-state, dynamics or both?")
+flags.DEFINE_bool("expose_critic", False, "If true, critic will be federated, too.")
 
 flags.DEFINE_float("lr", 1e-3, "Learning rate.")
 flags.DEFINE_float("mu", 1e-3, "Penalty coefficient for FedProx.")
@@ -85,9 +86,10 @@ def generate_halfcheetah_heterogeneity(i):
 
 def generate_reacher_heterogeneity(i):
   out = [[-0.2, 0.2], [-0.2, 0.2]]
+  action_noise = np.zeros(shape=(2,))
   if FLAGS.heterogeneity_type == 'iid':
     pass
-  if FLAGS.heterogeneity_type == 'init-state':
+  if FLAGS.heterogeneity_type in ['init-state', 'both']:
     # 64 clients.
     if i > 63:
       raise NotImplementedError
@@ -100,11 +102,11 @@ def generate_reacher_heterogeneity(i):
     y = 0.2 - col * 0.05
     out = [[x, x + 0.05], [y - 0.05, y]]
     #
-  if FLAGS.heterogeneity_type == 'dynamics':
-    raise NotImplementedError
+  if FLAGS.heterogeneity_type in ['dynamics', 'both']:
+    action_noise = np.random.normal(0.002, 0.0005, 2)
   if out[0][0] > out[0][1] or out[1][0] > out[1][1]:
     raise NotImplementedError
-  return out
+  return out, action_noise
 
 
 def main(_):
@@ -160,10 +162,13 @@ def main(_):
           qvel_high_low=[-0.005, 0.005], gravity=gravity)
       logging.error([x_left, x_right])
     if FLAGS.env == 'reacher':
-      qpos = generate_reacher_heterogeneity(i)
+      # Numpy is already seeded.
+      qpos, noise = generate_reacher_heterogeneity(i)
       env = reacherv2_lib.ReacherV2(
-          seed=seed, qpos_high_low=qpos, qvel_high_low=[-0.005, 0.005])
+          seed=seed, qpos_high_low=qpos, qvel_high_low=[-0.005, 0.005],
+          action_noise=noise)
       logging.error(qpos)
+      logging.error(noise)
     envs.append(env)
 
   # Set up clients.
@@ -188,7 +193,8 @@ def main(_):
               nm_targ=FLAGS.nm_targ, sigma=sigma,
               distance_metric=FLAGS.distance_metric,
           ), init_exp=0.5, final_exp=0.0, anneal_steps=1,
-          critic=critic_lib.Critic(env.state_dim, 200, seed=seed)
+          critic=critic_lib.Critic(env.state_dim, 200, seed=seed),
+          expose_critic=FLAGS.expose_critic
       )
 
     client = client_lib.Client(

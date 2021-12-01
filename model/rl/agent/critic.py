@@ -44,6 +44,14 @@ class Critic(object):
         self.lr = None  # learning rate set in _build_model()
         self.model = self._build_model()
 
+    def set_params(self, model_params=None):
+      if model_params is None:
+        return
+      self.model.set_weights(model_params)
+
+    def get_params(self, var_list=None):
+      return self.model.get_weights()
+
     def _build_model(self):
         """ Construct TensorFlow graph, including loss function, init op and train op """
         obs = Input(shape=(self.obs_dim,), dtype='float32', name='value_network_input')

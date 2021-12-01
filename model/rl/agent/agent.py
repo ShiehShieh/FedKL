@@ -8,10 +8,11 @@ import random
 class Agent(object):
   def __init__(self, agent_id,
                policy,
+               critic=None,
                init_exp=0.5,
                final_exp=0.0,
                anneal_steps=500,
-               critic=None):
+               expose_critic=False):
     self.policy = policy
     self.critic = critic
 
@@ -19,6 +20,9 @@ class Agent(object):
     self.init_exp              = init_exp
     self.final_exp             = final_exp
     self.anneal_steps          = anneal_steps
+    self.expose_critic         = expose_critic
+
+    self.num_policy_params = len(self.policy.get_params())
 
   def anneal_exploration(self, global_step):
     ratio = max((self.anneal_steps - global_step) / float(self.anneal_steps), 0)
@@ -49,9 +53,17 @@ class Agent(object):
     return self.policy.act(observations)
 
   def set_params(self, model_params):
+    if self.expose_critic:
+      p = model_params[:self.num_policy_params]
+      c = model_params[self.num_policy_params:]
+      return self.policy.set_params(p), self.critic.set_params(c)
     return self.policy.set_params(model_params)
 
   def get_params(self):
+    if self.expose_critic:
+      p = self.policy.get_params()
+      c = self.critic.get_params()
+      return p + c
     return self.policy.get_params()
 
   def reset_num_timestep_seen(self):
