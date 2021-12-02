@@ -9,8 +9,8 @@ import tensorflow.compat.v1 as tfv1
 tfv1.disable_eager_execution()
 
 import client.client as client_lib
-import env.halfcheetahv2 as halfcheetahv2_lib
-import env.reacherv2 as reacherv2_lib
+import environment.halfcheetahv2 as halfcheetahv2_lib
+import environment.reacherv2 as reacherv2_lib
 import model.fl.fedavg as fedavg_lib
 import model.fl.fedprox as fedprox_lib
 import model.fl.fedtrpo as fedtrpo_lib
@@ -26,6 +26,7 @@ flags.DEFINE_string("op", "Train", "Train or Test?")
 flags.DEFINE_integer("batch_size", 32, "Sample size for one batch.")
 flags.DEFINE_integer("num_epoches", 1, "Maximum number of training epoches.")
 flags.DEFINE_integer("clients_per_round", 5, "The number of clients.")
+flags.DEFINE_integer("num_rounds", 300, "The number of FL rounds.")
 flags.DEFINE_integer("n_local_iter", 200, "The number of local updates per round.")
 flags.DEFINE_string("heterogeneity_type", "init-state", "iid, init-state, dynamics or both?")
 flags.DEFINE_bool("expose_critic", False, "If true, critic will be federated, too.")
@@ -118,7 +119,7 @@ def main(_):
   mu = FLAGS.mu
   fl_params = {
       'clients_per_round': FLAGS.clients_per_round,
-      'num_rounds': 200,
+      'num_rounds': FLAGS.num_rounds,
       # The more local iteration, the more likely for FedAvg to diverge.
       'num_iter': FLAGS.n_local_iter,
       'timestep_per_batch': 2048,

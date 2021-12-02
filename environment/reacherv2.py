@@ -108,7 +108,8 @@ class CustomizedReacherEnv(ReacherEnv):
         self.qpos_high_low = qpos_high_low
         self.qvel_high_low = qvel_high_low
         self.action_noise = action_noise
-
+        # NOTE(XIE,Zhijie): Not a good practice though. If there is internal
+        # dependence on self.step(action), we might be in trouble.
         self.step_ = self.step
         self.step = lambda action: self.step_(action + self.action_noise)
 

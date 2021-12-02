@@ -12,8 +12,8 @@ import tensorflow.compat.v1 as tfv1
 tfv1.disable_eager_execution()
 
 import client.client as client_lib
-import env.halfcheetahv2 as halfcheetahv2_lib
-import env.reacherv2 as reacherv2_lib
+import environment.halfcheetahv2 as halfcheetahv2_lib
+import environment.reacherv2 as reacherv2_lib
 import model.rl.agent.agent as agent_lib
 import model.rl.agent.critic as critic_lib
 import model.rl.agent.trpo as trpo_lib

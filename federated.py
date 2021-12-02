@@ -15,16 +15,16 @@ from multiprocessing.dummy import Pool as ThreadPool
 tfv1.disable_eager_execution()
 
 import client.client as client_lib
-import env.airraidramv0 as airraidramv0_lib
-import env.antv2 as antv2_lib
-import env.cartpolev0 as cartpolev0_lib
-import env.fetchpickandplacev1 as fetchpickandplacev1_lib
-import env.halfcheetahv2 as halfcheetahv2_lib
-import env.hopperv2 as hopperv2_lib
-import env.humanoidv2 as humanoidv2_lib
-import env.invertedpendulumv2 as invertedpendulumv2_lib
-import env.reacherv2 as reacherv2_lib
-import env.walker2dv2 as walker2dv2_lib
+import environment.airraidramv0 as airraidramv0_lib
+import environment.antv2 as antv2_lib
+import environment.cartpolev0 as cartpolev0_lib
+import environment.fetchpickandplacev1 as fetchpickandplacev1_lib
+import environment.halfcheetahv2 as halfcheetahv2_lib
+import environment.hopperv2 as hopperv2_lib
+import environment.humanoidv2 as humanoidv2_lib
+import environment.invertedpendulumv2 as invertedpendulumv2_lib
+import environment.reacherv2 as reacherv2_lib
+import environment.walker2dv2 as walker2dv2_lib
 import model.rl.agent.agent as agent_lib
 import model.rl.agent.critic as critic_lib
 import model.rl.agent.reinforce as reinforce_lib

@@ -69,3 +69,10 @@ py_library(
         "reacherv2.py",
     ],
 )
+
+py_library(
+    name = "figureeight",
+    srcs = [
+        "figureeight.py",
+    ],
+)
