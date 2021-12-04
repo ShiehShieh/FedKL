@@ -109,6 +109,17 @@ class DiagGauss(ProbType):
       std1 = prob1[:, self.d:]
       var1 = tf.square(std1)
 
+      def _one_dim_tv(mu1, sigma1, mu2, sigma2):
+        t1 = tf.abs(sigma1 - sigma2) / tf.maximum(sigma1, 1e-8)
+        t2 = tf.abs(mu1 - mu2) / tf.maximum(sigma1, 1e-8)
+        lower = 1.0 / 200.0 * tf.minimum(1.0, tf.maximum(t1, 40 * t2))
+        upper = 3.0 / 2.0 * t1 + 1.0 / 2.0 * t2
+        return lower, upper
+
+      if self.d == 1:
+        lower, upper = _one_dim_tv(mean0, var0, mean1, var1)
+        return upper
+
       def _tv(mu1, sigma1, mu2, sigma2):
         v = tf.expand_dims(mu1 - mu2, axis=1)
         t1 = tf.abs(tf.matmul(

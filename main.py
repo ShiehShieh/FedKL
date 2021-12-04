@@ -30,6 +30,7 @@ flags.DEFINE_integer("num_rounds", 500, "The number of FL rounds.")
 flags.DEFINE_integer("n_local_iter", 200, "The number of local updates per round.")
 flags.DEFINE_string("heterogeneity_type", "init-state", "iid, init-state, dynamics or both?")
 flags.DEFINE_bool("expose_critic", False, "If true, critic will be federated, too.")
+flags.DEFINE_integer("eval_every", 1, "Perform a test run every this round.")
 
 flags.DEFINE_float("lr", 1e-3, "Learning rate.")
 flags.DEFINE_float("mu", 1e-3, "Penalty coefficient for FedProx.")
@@ -160,7 +161,7 @@ def main(_):
       'num_iter': FLAGS.n_local_iter,
       'timestep_per_batch': 1500,  # 2048,
       'max_steps': 10000,
-      'eval_every': 1,
+      'eval_every': FLAGS.eval_every,
       'drop_percent': 0.0,
       'has_global_svf': FLAGS.has_global_svf,
       'verbose': True,
