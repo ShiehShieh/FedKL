@@ -5,6 +5,10 @@ py_library(
     srcs = [
         "fedbase.py",
     ],
+    deps = [
+        "//model/rl/agent:vec_agent",
+        "//model/utils:vectorization",
+    ],
 )
 
 py_library(
@@ -14,6 +18,8 @@ py_library(
     ],
     deps = [
         ":fedbase",
+        "//model/rl/agent:vec_agent",
+        "//model/utils:vectorization",
     ],
 )
 
@@ -24,6 +30,8 @@ py_library(
     ],
     deps = [
         ":fedbase",
+        "//model/rl/agent:vec_agent",
+        "//model/utils:vectorization",
     ],
 )
 
@@ -34,5 +42,7 @@ py_library(
     ],
     deps = [
         ":fedbase",
+        "//model/rl/agent:vec_agent",
+        "//model/utils:vectorization",
     ],
 )

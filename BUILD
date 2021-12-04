@@ -39,6 +39,7 @@ py_binary(
         "//environment:antv2",
         "//environment:cartpolev0",
         "//environment:fetchpickandplacev1",
+        "//environment:figureeight",
         "//environment:halfcheetahv2",
         "//environment:hopperv2",
         "//environment:humanoidv2",

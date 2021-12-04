@@ -1,19 +1,23 @@
 #!/usr/bin/env python
 
 from absl import logging
+from tqdm import tqdm
 
+import sys
 import numpy as np
 from collections import deque, defaultdict
 
 import model.rl.comp.state_visitation_frequency as svf_lib
 import model.utils.filters as filters_lib
 import model.utils.utils as utils_lib
+import model.utils.vectorization as vectorization_lib
 
 
 class Client(object):
   def __init__(
       self, cid, group, agent, env, num_test_epochs=100, filt=True,
-      parallel=1, extra_features=set(['next_observations', 'probs'])):
+      parallel=1, extra_features=set(['next_observations', 'probs']),
+      universial_vec_env=None):
     self.cid = cid
     self.group = group
     self.agent = agent
@@ -31,6 +35,7 @@ class Client(object):
     self.use_svf = False
     self.extra_features = extra_features
     self.parallel = parallel
+    self.universial_vec_env = universial_vec_env
 
   def set_params(self, model_params):
     return self.agent.set_params(model_params)
@@ -58,8 +63,8 @@ class Client(object):
 
   def test(self):
     parallel = self.num_test_epochs
-    if self.num_test_epochs > 20:
-      parallel = 20
+    if self.num_test_epochs > 10:
+      parallel = 10
     envs = self.env.get_parallel_envs(parallel)
     _, episode_rewards = self.rollout(envs, -1, self.num_test_epochs)
     envs.close()
@@ -180,3 +185,64 @@ class Client(object):
       logger("policy stat: {}".format(self.agent.stat()))
 
     return mean_rewards
+
+
+class UniversalClient(object):
+  def __init__(self, envs, future_discount=0.99, lam=0.98, num_test_epochs=100):
+    self.envs = envs
+    self.future_discount = future_discount
+    self.lam = lam
+    self.episode_history = deque(maxlen=5)
+    self.num_test_epochs = num_test_epochs
+    self.num_iter_seen = 0
+
+  def test(self, agents, obfilts, rewfilts):
+    _, _, episode_rewards = vectorization_lib.vectorized_rollout(
+        agents, self.envs, obfilts, rewfilts, self.future_discount,
+        self.lam, -1, self.num_test_epochs, True)
+    return np.mean(episode_rewards, axis=0)
+
+  def experiment(self, num_iter, timestep_per_batch, agents, obfilts,
+                 rewfilts, callback_before_fit=[], logger=None):
+    # buffer for receiving client solutions
+    cws = []
+    inner_loop = tqdm(
+        total=num_iter, desc='Local iteration', position=1,
+        dynamic_ncols=True)
+    if logger is not None:
+      logger = lambda x: inner_loop.write(x, file=sys.stderr)
+    for i in range(num_iter):
+      self.num_iter_seen += 1
+      # Rollout.
+      _, paths_list, episode_rewards = vectorization_lib.vectorized_rollout(
+          agents, self.envs, obfilts, rewfilts, self.future_discount,
+          self.lam, timestep_per_batch, -1, True)
+      steps_list = []
+      for paths in paths_list:
+        steps = utils_lib.convert_trajectories_to_steps(
+            paths, shuffle=True)
+        steps['svf'] = np.zeros(shape=(1,))
+        steps['norm_penalty'] = np.zeros(shape=(1,))
+        steps_list.append(steps)
+      # Sync, cleanup, etc.
+      for cb in callback_before_fit:
+        cb()
+      # Training policies.
+      agents.fit(steps_list)
+
+      self.episode_history.extend(episode_rewards)
+
+      inner_loop.update()
+
+    mean_rewards = np.mean(self.episode_history)
+    if logger:
+      logger("Local iteration {}".format(self.num_iter_seen))
+      logger("Average reward for last {} episodes: {:.2f}".format(min(len(self.episode_history), self.episode_history.maxlen), mean_rewards))
+      for i in range(agents.num_agent):
+        agent = agents.get_agent(i)
+        logger("policy stat: {}".format(agent.stat()))
+
+    return mean_rewards
+
+  def cleanup(self):
+    self.envs.close()

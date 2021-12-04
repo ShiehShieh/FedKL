@@ -41,3 +41,11 @@ py_library(
     name = "logger_handler",
     srcs = ["logger_handler.py"],
 )
+
+py_library(
+    name = "vectorization",
+    srcs = ["vectorization.py"],
+    deps = [
+        "//model/utils:utils",
+    ],
+)

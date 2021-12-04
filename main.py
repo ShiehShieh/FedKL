@@ -26,7 +26,7 @@ flags.DEFINE_string("op", "Train", "Train or Test?")
 flags.DEFINE_integer("batch_size", 32, "Sample size for one batch.")
 flags.DEFINE_integer("num_epoches", 1, "Maximum number of training epoches.")
 flags.DEFINE_integer("clients_per_round", 5, "The number of clients.")
-flags.DEFINE_integer("num_rounds", 300, "The number of FL rounds.")
+flags.DEFINE_integer("num_rounds", 500, "The number of FL rounds.")
 flags.DEFINE_integer("n_local_iter", 200, "The number of local updates per round.")
 flags.DEFINE_string("heterogeneity_type", "init-state", "iid, init-state, dynamics or both?")
 flags.DEFINE_bool("expose_critic", False, "If true, critic will be federated, too.")
@@ -38,7 +38,7 @@ flags.DEFINE_bool("has_global_svf", False, "If true, client has access to the gl
 flags.DEFINE_string("distance_metric", 'tv', "One of tv, mahalanobis and wasserstein.")
 flags.DEFINE_string("fed", "FedAvg", "Federated Learning Algorithm.")
 flags.DEFINE_string("pg", "REINFORCE", "Policy Gradient Algorithm.")
-flags.DEFINE_string("env", "halfcheetah", "halfcheetah or reacher.")
+flags.DEFINE_string("env", "halfcheetah", "halfcheetah, reacher or figureeightv1.")
 
 flags.DEFINE_bool("linear", False, "Use linear layer for MLP.")
 flags.DEFINE_integer("parallel", 10, "Parallelism for env rollout.")
@@ -114,6 +114,42 @@ def main(_):
   gpus = tf.config.experimental.list_physical_devices('GPU')
   logging.error(gpus)
 
+  # Create env before hand for saving memory.
+  envs = []
+  # Keep this number low or we may fail to simulate the heterogeneity.
+  num_total_clients = 64
+  universial_client = None
+  if FLAGS.env == 'figureeightv1':
+    num_total_clients = 7
+  for i in range(num_total_clients):
+    seed = int(i * 1e4)
+    if FLAGS.env == 'halfcheetah':
+      x_left, x_right, gravity = generate_halfcheetah_heterogeneity(i)
+      env = halfcheetahv2_lib.HalfCheetahV2(
+          seed=seed, qpos_high_low=[x_left, x_right],
+          qvel_high_low=[-0.005, 0.005], gravity=gravity)
+      logging.error([x_left, x_right])
+    if FLAGS.env == 'reacher':
+      # Numpy is already seeded.
+      qpos, noise = generate_reacher_heterogeneity(i)
+      env = reacherv2_lib.ReacherV2(
+          seed=seed, qpos_high_low=qpos, qvel_high_low=[-0.005, 0.005],
+          action_noise=noise)
+      logging.error(qpos)
+      logging.error(noise)
+    if FLAGS.env == 'figureeightv1':
+      import logging as py_logging
+      py_logging.disable(py_logging.INFO)
+      import environment.figureeight as figureeight_lib
+      env = figureeight_lib.CustomizedCAV()
+      if universial_client is None:
+        fev1 = figureeight_lib.FlowFigureEightV1(0)
+        universial_client = client_lib.UniversalClient(
+            envs=fev1, future_discount=0.99, lam=0.95, num_test_epochs=20
+        )
+
+    envs.append(env)
+
   # Federated Learning Experiments.
   lr = FLAGS.lr
   mu = FLAGS.mu
@@ -122,7 +158,7 @@ def main(_):
       'num_rounds': FLAGS.num_rounds,
       # The more local iteration, the more likely for FedAvg to diverge.
       'num_iter': FLAGS.n_local_iter,
-      'timestep_per_batch': 2048,
+      'timestep_per_batch': 1500,  # 2048,
       'max_steps': 10000,
       'eval_every': 1,
       'drop_percent': 0.0,
@@ -147,30 +183,7 @@ def main(_):
     fl = fedtrpo_lib.FedTRPO(**fl_params)
     opt_class = lambda: tf.optimizers.SGD(learning_rate=lr)
     sigma = 1.0
-
-  # Create env before hand for saving memory.
-  envs = []
-  # Keep this number low or we may fail to simulate the heterogeneity.
-  num_total_clients = 50
-  num_total_clients = 30
-  num_total_clients = 64
-  for i in range(num_total_clients):
-    seed = int(i * 1e4)
-    if FLAGS.env == 'halfcheetah':
-      x_left, x_right, gravity = generate_halfcheetah_heterogeneity(i)
-      env = halfcheetahv2_lib.HalfCheetahV2(
-          seed=seed, qpos_high_low=[x_left, x_right],
-          qvel_high_low=[-0.005, 0.005], gravity=gravity)
-      logging.error([x_left, x_right])
-    if FLAGS.env == 'reacher':
-      # Numpy is already seeded.
-      qpos, noise = generate_reacher_heterogeneity(i)
-      env = reacherv2_lib.ReacherV2(
-          seed=seed, qpos_high_low=qpos, qvel_high_low=[-0.005, 0.005],
-          action_noise=noise)
-      logging.error(qpos)
-      logging.error(noise)
-    envs.append(env)
+  fl.register_universal_client(universial_client)
 
   # Set up clients.
   for i in range(num_total_clients):
@@ -208,6 +221,11 @@ def main(_):
 
   # Logging.
   logging.error('# retry: %d' % (fl.get_num_retry()))
+
+  # Cleanup.
+  figureeight_lib.cleanup()
+  if universial_client is not None:
+    universial_client.cleanup()
 
 
 if __name__ == "__main__":

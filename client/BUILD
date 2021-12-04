@@ -9,6 +9,6 @@ py_binary(
         "//model/rl/comp:state_visitation_frequency",
         "//model/utils:filters",
         "//model/utils:utils",
-        "//model/utils/vec_env:vec_env",
+        "//model/utils:vectorization",
     ],
 )

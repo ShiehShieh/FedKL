@@ -56,3 +56,10 @@ py_library(
     deps = [
     ],
 )
+
+py_library(
+    name = "vec_agent",
+    srcs = ["vec_agent.py"],
+    deps = [
+    ],
+)
