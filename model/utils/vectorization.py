@@ -88,15 +88,15 @@ def vectorized_rollout(agents, envs, obfilts, rewfilts, future_discount, lam, n_
       paths_list[i].append(trajectory)
       timesteps_per[i] += path_length(trajectory)
       timesteps_sofar += path_length(trajectory)
-    if not is_per and n_timesteps > 0 and timesteps_sofar > n_timesteps:
+    if not is_per and n_timesteps > 0 and timesteps_sofar >= n_timesteps:
       break
-    if not is_per and n_episodes > 0 and len(paths) > n_episodes:
+    if not is_per and n_episodes > 0 and len(paths) >= n_episodes:
       paths = paths[:n_episodes]
       break
-    if is_per and n_timesteps > 0 and np.min(timesteps_per) > n_timesteps:
+    if is_per and n_timesteps > 0 and np.min(timesteps_per) >= n_timesteps:
       break
     if is_per and n_episodes > 0 and np.min(
-        [len(p) for p in paths_list]) > n_episodes:
+        [len(p) for p in paths_list]) >= n_episodes:
       for i in range(len(paths_list)):
         paths_list[i] = paths_list[i][:n_episodes]
       paths = [item for sub in paths_list for item in sub]

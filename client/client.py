@@ -200,7 +200,7 @@ class UniversalClient(object):
     _, _, episode_rewards = vectorization_lib.vectorized_rollout(
         agents, self.envs, obfilts, rewfilts, self.future_discount,
         self.lam, -1, self.num_test_epochs, True)
-    return np.mean(episode_rewards, axis=0)
+    return np.mean(episode_rewards, axis=1)
 
   def experiment(self, num_iter, timestep_per_batch, agents, obfilts,
                  rewfilts, callback_before_fit=[], logger=None):
