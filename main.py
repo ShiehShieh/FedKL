@@ -145,8 +145,9 @@ def main(_):
       env = figureeight_lib.CustomizedCAV()
       if universial_client is None:
         fev1 = figureeight_lib.FlowFigureEightV1(0)
+        # TODO(XIE,Zhijie): Set num_test_epochs to 40 for report.
         universial_client = client_lib.UniversalClient(
-            envs=fev1, future_discount=0.99, lam=0.95, num_test_epochs=20
+            envs=fev1, future_discount=0.99, lam=0.95, num_test_epochs=10
         )
 
     envs.append(env)

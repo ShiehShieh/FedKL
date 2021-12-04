@@ -99,6 +99,7 @@ def vectorized_rollout(agents, envs, obfilts, rewfilts, future_discount, lam, n_
         [len(p) for p in paths_list]) >= n_episodes:
       for i in range(len(paths_list)):
         paths_list[i] = paths_list[i][:n_episodes]
+        episode_rewards[i] = episode_rewards[i][:n_episodes]
       paths = [item for sub in paths_list for item in sub]
       break
 

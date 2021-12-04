@@ -192,7 +192,7 @@ class UniversalClient(object):
     self.envs = envs
     self.future_discount = future_discount
     self.lam = lam
-    self.episode_history = deque(maxlen=5)
+    self.episode_history = deque(maxlen=self.envs.num_envs)
     self.num_test_epochs = num_test_epochs
     self.num_iter_seen = 0
 
@@ -230,7 +230,7 @@ class UniversalClient(object):
       # Training policies.
       agents.fit(steps_list)
 
-      self.episode_history.extend(episode_rewards)
+      self.episode_history.extend([er[-1] for er in episode_rewards])
 
       inner_loop.update()
 
