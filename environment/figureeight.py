@@ -59,6 +59,7 @@ class FlowFigureEightV1(VecEnv):
   def reset(self):
     # NOTE(XIE,Zhijie): The reset function of flow and sumo is buggy.
     # cf. https://www.eclipse.org/lists/sumo-user/msg05429.html
+    #     https://github.com/eclipse/sumo/issues/6479
     self.global_env.terminate()
     self.global_env.close()
     self.global_env = gym.envs.make(_env_name)

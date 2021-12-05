@@ -87,11 +87,25 @@ class DiagGauss(ProbType):
         return tf.math.exp(self.loglikelihood(a, prob))
 
     def kl(self, prob0, prob1):
-        mean0 = prob0[:, :self.d]
-        std0 = prob0[:, self.d:]
-        mean1 = prob1[:, :self.d]
-        std1 = prob1[:, self.d:]
-        return tf.reduce_sum(tf.math.log(std1 / std0), axis=1) + tf.reduce_sum((tf.math.square(std0) + tf.math.square(mean0 - mean1)) / (2.0 * tf.math.square(std1)), axis=1) - 0.5 * self.d
+      mean0 = prob0[:, :self.d]
+      std0 = prob0[:, self.d:]
+      var0 = tf.square(std0)
+      mean1 = prob1[:, :self.d]
+      std1 = prob1[:, self.d:]
+      var1 = tf.square(std1)
+
+      def _one_dim_kl(mu1, sigma1, stddev1, mu2, sigma2, stddev2):
+        # This func is not essential though. Because the one-dimensional case
+        # is covered by the following k-dimensional case, where k can be 1.
+        t1 = tf.math.log(stddev2 / tf.maximum(stddev1, 1e-8))
+        t2 = (sigma1 + tf.math.square(mu1 - mu2)) / (
+            2.0 * tf.maximum(sigma2, 1e-8))
+        return t1 + t2 - 1.0 / 2.0
+
+      if self.d == 1:
+        return _one_dim_kl(mean0, var0, std0, mean1, var1, std1)
+
+      return tf.reduce_sum(tf.math.log(std1 / std0), axis=1) + tf.reduce_sum((tf.math.square(std0) + tf.math.square(mean0 - mean1)) / (2.0 * tf.math.square(std1)), axis=1) - 0.5 * self.d
 
     def tv(self, prob0, prob1):
       """
@@ -109,15 +123,16 @@ class DiagGauss(ProbType):
       std1 = prob1[:, self.d:]
       var1 = tf.square(std1)
 
-      def _one_dim_tv(mu1, sigma1, mu2, sigma2):
+      def _one_dim_tv(mu1, sigma1, stddev1, mu2, sigma2, stddev2):
+        # This func is essential. It doesn't involve the calculation of eigenvalue.
         t1 = tf.abs(sigma1 - sigma2) / tf.maximum(sigma1, 1e-8)
-        t2 = tf.abs(mu1 - mu2) / tf.maximum(sigma1, 1e-8)
-        lower = 1.0 / 200.0 * tf.minimum(1.0, tf.maximum(t1, 40 * t2))
+        t2 = tf.abs(mu1 - mu2) / tf.maximum(stddev1, 1e-8)
+        lower = 1.0 / 200.0 * tf.minimum(1.0, tf.maximum(t1, 40.0 * t2))
         upper = 3.0 / 2.0 * t1 + 1.0 / 2.0 * t2
         return lower, upper
 
       if self.d == 1:
-        lower, upper = _one_dim_tv(mean0, var0, mean1, var1)
+        lower, upper = _one_dim_tv(mean0, var0, std0, mean1, var1, std1)
         return upper
 
       def _tv(mu1, sigma1, mu2, sigma2):
