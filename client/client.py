@@ -192,7 +192,7 @@ class UniversalClient(object):
     self.envs = envs
     self.future_discount = future_discount
     self.lam = lam
-    self.episode_history = deque(maxlen=self.envs.num_envs)
+    self.episode_history = deque(maxlen=10 * self.envs.num_envs)
     self.num_test_epochs = num_test_epochs
     self.num_iter_seen = 0
 
@@ -202,8 +202,8 @@ class UniversalClient(object):
         self.lam, -1, self.num_test_epochs, True)
     return np.mean(episode_rewards, axis=1)
 
-  def experiment(self, num_iter, timestep_per_batch, agents, obfilts,
-                 rewfilts, callback_before_fit=[], logger=None):
+  def experiment(self, num_iter, timestep_per_batch, indices, agents,
+                 obfilts, rewfilts, callback_before_fit=[], logger=None):
     # buffer for receiving client solutions
     cws = []
     inner_loop = tqdm(
@@ -228,7 +228,7 @@ class UniversalClient(object):
       for cb in callback_before_fit:
         cb()
       # Training policies.
-      agents.fit(steps_list)
+      agents.fit(steps_list, indices=indices)
 
       self.episode_history.extend([er[-1] for er in episode_rewards])
 
@@ -238,9 +238,9 @@ class UniversalClient(object):
     if logger:
       logger("Local iteration {}".format(self.num_iter_seen))
       logger("Average reward for last {} episodes: {:.2f}".format(min(len(self.episode_history), self.episode_history.maxlen), mean_rewards))
-      for i in range(agents.num_agent):
+      for i in indices:
         agent = agents.get_agent(i)
-        logger("policy stat: {}".format(agent.stat()))
+        logger("# {} policy stat: {}".format(i, agent.stat()))
 
     return mean_rewards
 

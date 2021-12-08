@@ -7,37 +7,39 @@ from gym.utils import seeding
 
 from stable_baselines3.common.vec_env import VecEnv
 
-from flow.benchmarks.figureeight1 import flow_params as flow_params_v1
-from flow.benchmarks.figureeight2 import flow_params as flow_params_v2
+from flow.benchmarks.figureeight1 import flow_params
 from flow.utils.registry import make_create_env
 
 
-flow_params_v1['sim'].print_warnings = False
-flow_params_v1['sim'].seed = 0
-_create_env_v1, _env_name_v1 = make_create_env(flow_params_v1, version=1)
-_global_env_v1 = _create_env_v1()
-
-flow_params_v2['sim'].print_warnings = False
-flow_params_v2['sim'].seed = 0
-_create_env_v2, _env_name_v2 = make_create_env(flow_params_v2, version=2)
-_global_env_v2 = _create_env_v2()
+flow_params['sim'].print_warnings = False
+flow_params['sim'].seed = 0
+_create_env, _env_name = make_create_env(flow_params, version=0)
+_global_env = _create_env()
 
 
-class FlowFigureEight(VecEnv):
+class BottleneckV0(VecEnv):
   def __init__(self, seed=None):
-    # VecEnv.__init__(self, num_envs, observation_space, action_space)
-    pass
+    self.seed = seed
+    self.flow_params = flow_params
+    self.num_vehicle = flow_params['veh'].num_vehicles
+    self.num_cav = flow_params['veh'].num_rl_vehicles
+
+    # create and register the environment with OpenAI Gym
+    self.global_env = gym.envs.make(_env_name)
+    # https://github.com/flow-project/flow/blob/master/flow/benchmarks/figureeight1.py#L25
+    self.cav_idx = [1, 3, 5, 7, 9, 11, 13]
+    self.num_envs = len(self.cav_idx)
 
   def _from_state(self, state):
     num_vehicle = len(state) / 2
     assert num_vehicle == self.num_vehicle, "# vehicle is not consistent: got: %s, want: %s" % (num_vehicle, self.num_vehicle)
     states = []
     for i in self.cav_idx:
-      ahead = i - 1 if i > 0 else int(num_vehicle - 1)
-      behind = i + 1 if i < int(num_vehicle - 1) else 0
-      s = np.array(state[2 * ahead:2 * ahead + 2].tolist() + \
-                   state[2 * i:2 * i + 2].tolist() + \
-                   state[2 * behind:2 * behind + 2].tolist())
+      ahead = i - 1 if i > 0 else (num_vehicle - 1)
+      behind = i + 1 if i < (num_vehicle - 1) else 0
+      s = np.array(state[2 * ahead: 2 * ahead + 2].tolist() + \
+                   state[2 * i: 2 * i + 2].tolist() + \
+                   state[2 * behind: 2 * behind + 2].tolist())
       states.append(s)
     return states
 
@@ -60,7 +62,7 @@ class FlowFigureEight(VecEnv):
     #     https://github.com/eclipse/sumo/issues/6479
     self.global_env.terminate()
     self.global_env.close()
-    self.global_env = gym.envs.make(self.env_name)
+    self.global_env = gym.envs.make(_env_name)
     return self._from_state(self.global_env.reset())
 
   def step_async(self, actions):
@@ -92,44 +94,11 @@ class FlowFigureEight(VecEnv):
     raise NotImplementedError
 
 
-class FlowFigureEightV1(FlowFigureEight):
-  def __init__(self, seed=None):
-    FlowFigureEight.__init__(self)
-    self.seed = seed
-    self.flow_params = flow_params_v1
-    self.num_vehicle = flow_params_v1['veh'].num_vehicles
-    self.num_cav = flow_params_v1['veh'].num_rl_vehicles
-
-    # create and register the environment with OpenAI Gym
-    self.env_name = _env_name_v1
-    self.global_env = gym.envs.make(self.env_name)
-    # https://github.com/flow-project/flow/blob/master/flow/benchmarks/figureeight1.py#L25
-    self.cav_idx = [1, 3, 5, 7, 9, 11, 13]
-    self.num_envs = len(self.cav_idx)
-
-
-class FlowFigureEightV2(FlowFigureEight):
-  def __init__(self, seed=None):
-    FlowFigureEight.__init__(self)
-    self.seed = seed
-    self.flow_params = flow_params_v2
-    self.num_vehicle = flow_params_v2['veh'].num_vehicles
-    self.num_cav = flow_params_v2['veh'].num_rl_vehicles
-
-    # create and register the environment with OpenAI Gym
-    self.env_name = _env_name_v2
-    self.global_env = gym.envs.make(self.env_name)
-    # https://github.com/flow-project/flow/blob/master/flow/benchmarks/figureeight1.py#L25
-    self.cav_idx = list(range(14))
-    self.num_envs = len(self.cav_idx)
-
-
 _SUMO_ENVS = FlowFigureEightV1(0)
 _SUMO_ENVS_STATE = _SUMO_ENVS.reset()[0]
 
 
 class CustomizedCAV(object):
-  """It is the same for all versions."""
 
   def __init__(self):
     # Create environment meta.

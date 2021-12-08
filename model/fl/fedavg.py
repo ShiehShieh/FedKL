@@ -61,15 +61,16 @@ class FedAvg(fedbase_lib.FederatedBase):
       inner_loop.update()
     return cws
 
-  def _inner_vectorized_loop(self, i_iter, active_clients, retry_min):
+  def _inner_vectorized_loop(self, i_iter, indices, retry_min):
     verbose = self.verbose
     # Create vectorized objects.
+    active_clients = [self.clients[idx] for idx in indices]
     agents = vec_agent_lib.VecAgent(
-        [c.agent for c in active_clients])
+        [c.agent for c in self.clients])
     obfilts = vectorization_lib.VecCallable(
-        [c.obfilt for c in active_clients])
+        [c.obfilt for c in self.clients])
     rewfilts = vectorization_lib.VecCallable(
-        [c.rewfilt for c in active_clients])
+        [c.rewfilt for c in self.clients])
     # buffer for receiving client solutions
     cws = []
     # Commence this round.
@@ -79,7 +80,7 @@ class FedAvg(fedbase_lib.FederatedBase):
       c.sync_anchor_policy()
     self.universial_client.experiment(
         num_iter=self.num_iter,
-        timestep_per_batch=self.timestep_per_batch,
+        timestep_per_batch=self.timestep_per_batch, indices=indices,
         agents=agents, obfilts=obfilts, rewfilts=rewfilts,
         callback_before_fit=[c.sync_old_policy for c in active_clients],
         logger=print if verbose else None,

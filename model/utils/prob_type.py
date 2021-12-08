@@ -124,7 +124,8 @@ class DiagGauss(ProbType):
       var1 = tf.square(std1)
 
       def _one_dim_tv(mu1, sigma1, stddev1, mu2, sigma2, stddev2):
-        # This func is essential. It doesn't involve the calculation of eigenvalue.
+        # This func is essential, as it doesn't involve the calculation of
+        # sum of squared eigenvalues.
         t1 = tf.abs(sigma1 - sigma2) / tf.maximum(sigma1, 1e-8)
         t2 = tf.abs(mu1 - mu2) / tf.maximum(stddev1, 1e-8)
         lower = 1.0 / 200.0 * tf.minimum(1.0, tf.maximum(t1, 40.0 * t2))

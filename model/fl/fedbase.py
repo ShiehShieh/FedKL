@@ -41,6 +41,13 @@ class FederatedBase(object):
     self.clients.append(client)
     if self.global_weights is None:
       self.global_weights = client.get_params()
+    # Create vectorized objects.
+    self.agents = vec_agent_lib.VecAgent(
+        [c.agent for c in self.clients])
+    self.obfilts = vectorization_lib.VecCallable(
+        [c.obfilt for c in self.clients])
+    self.rewfilts = vectorization_lib.VecCallable(
+        [c.rewfilt for c in self.clients])
 
   def distribute(self, clients):
     for client in clients:
@@ -67,7 +74,7 @@ class FederatedBase(object):
   def _inner_sequential_loop(self, i_iter, active_clients, retry_min):
     raise NotImplementedError
 
-  def _inner_vectorized_loop(self, i_iter, active_clients, retry_min):
+  def _inner_vectorized_loop(self, i_iter, indices, retry_min):
     raise NotImplementedError
 
   def train(self):
@@ -108,7 +115,7 @@ class FederatedBase(object):
       cws = []
       # Inner sequantial loop.
       if self.universial_client is not None:
-        cws = self._inner_vectorized_loop(i, active_clients, retry_min)
+        cws = self._inner_vectorized_loop(i, indices, retry_min)
       else:
         cws = self._inner_sequential_loop(i, active_clients, retry_min)
 
@@ -150,13 +157,8 @@ class FederatedBase(object):
 
   def universal_test(self):
     self.distribute(self.clients)
-    agents = vec_agent_lib.VecAgent(
-        [c.agent for c in self.clients])
-    obfilts = vectorization_lib.VecCallable(
-        [c.obfilt for c in self.clients])
-    rewfilts = vectorization_lib.VecCallable(
-        [c.rewfilt for c in self.clients])
-    rewards = self.universial_client.test(agents, obfilts, rewfilts)
+    rewards = self.universial_client.test(self.agents, self.obfilts,
+                                          self.rewfilts)
     ids = [c.cid for c in self.clients]
     groups = [c.group for c in self.clients]
     return ids, groups, rewards

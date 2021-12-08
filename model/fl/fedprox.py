@@ -64,15 +64,9 @@ class FedProx(fedbase_lib.FederatedBase):
       inner_loop.update()
     return cws
 
-  def _inner_vectorized_loop(self, i_iter, active_clients, retry_min):
+  def _inner_vectorized_loop(self, i_iter, indices, retry_min):
     verbose = self.verbose
-    # Create vectorized objects.
-    agents = vec_agent_lib.VecAgent(
-        [c.agent for c in active_clients])
-    obfilts = vectorization_lib.VecCallable(
-        [c.obfilt for c in active_clients])
-    rewfilts = vectorization_lib.VecCallable(
-        [c.rewfilt for c in active_clients])
+    active_clients = [self.clients[idx] for idx in indices]
     # buffer for receiving client solutions
     cws = []
     # Commence this round.
@@ -83,8 +77,8 @@ class FedProx(fedbase_lib.FederatedBase):
       c.sync_anchor_policy()
     self.universial_client.experiment(
         num_iter=self.num_iter,
-        timestep_per_batch=self.timestep_per_batch,
-        agents=agents, obfilts=obfilts, rewfilts=rewfilts,
+        timestep_per_batch=self.timestep_per_batch, indices=indices,
+        agents=self.agents, obfilts=self.obfilts, rewfilts=self.rewfilts,
         callback_before_fit=[c.sync_old_policy for c in active_clients],
         logger=print if verbose else None,
     )

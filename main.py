@@ -122,6 +122,8 @@ def main(_):
   universial_client = None
   if FLAGS.env == 'figureeightv1':
     num_total_clients = 7
+  if FLAGS.env == 'figureeightv2':
+    num_total_clients = 14
   for i in range(num_total_clients):
     seed = int(i * 1e4)
     if FLAGS.env == 'halfcheetah':
@@ -138,16 +140,22 @@ def main(_):
           action_noise=noise)
       logging.error(qpos)
       logging.error(noise)
-    if FLAGS.env == 'figureeightv1':
+    if FLAGS.env.startswith('figureeight'):
       import logging as py_logging
       py_logging.disable(py_logging.INFO)
       import environment.figureeight as figureeight_lib
       env = figureeight_lib.CustomizedCAV()
       if universial_client is None:
-        fev1 = figureeight_lib.FlowFigureEightV1(0)
+        fev = None
+        if FLAGS.env == 'figureeightv1':
+          fev = figureeight_lib.FlowFigureEightV1(0)
+        elif FLAGS.env == 'figureeightv2':
+          fev = figureeight_lib.FlowFigureEightV2(0)
+        else:
+          raise NotImplementedError
         # TODO(XIE,Zhijie): Set num_test_epochs to 40 for report.
         universial_client = client_lib.UniversalClient(
-            envs=fev1, future_discount=0.99, lam=0.95, num_test_epochs=10
+            envs=fev, future_discount=0.99, lam=0.95, num_test_epochs=10
         )
 
     envs.append(env)

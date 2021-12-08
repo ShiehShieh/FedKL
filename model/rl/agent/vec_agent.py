@@ -8,9 +8,11 @@ class VecAgent(object):
     self.agents = agents
     self.num_agent = len(agents)
 
-  def fit(self, steps_list, logger=None):
+  def fit(self, steps_list, indices=None, logger=None):
     assert len(steps_list) == self.num_agent or self.num_agent == 1, 'mismatched steps dim and # agent: want: %s, got: %s' % (self.num_agent, len(steps_list))
-    for i in range(self.num_agent):
+    if indices is None:
+      indices = range(self.num_agent)
+    for i in indices:
       steps = steps_list[i]
       agent = self.agents[i]
       agent.critic.fit(steps['observations'], steps['dfr'])
