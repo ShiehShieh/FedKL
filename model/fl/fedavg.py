@@ -65,12 +65,6 @@ class FedAvg(fedbase_lib.FederatedBase):
     verbose = self.verbose
     # Create vectorized objects.
     active_clients = [self.clients[idx] for idx in indices]
-    agents = vec_agent_lib.VecAgent(
-        [c.agent for c in self.clients])
-    obfilts = vectorization_lib.VecCallable(
-        [c.obfilt for c in self.clients])
-    rewfilts = vectorization_lib.VecCallable(
-        [c.rewfilt for c in self.clients])
     # buffer for receiving client solutions
     cws = []
     # Commence this round.
@@ -81,7 +75,7 @@ class FedAvg(fedbase_lib.FederatedBase):
     self.universial_client.experiment(
         num_iter=self.num_iter,
         timestep_per_batch=self.timestep_per_batch, indices=indices,
-        agents=agents, obfilts=obfilts, rewfilts=rewfilts,
+        agents=self.agents, obfilts=self.obfilts, rewfilts=self.rewfilts,
         callback_before_fit=[c.sync_old_policy for c in active_clients],
         logger=print if verbose else None,
     )
