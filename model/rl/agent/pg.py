@@ -15,6 +15,7 @@ tfv1.enable_control_flow_v2()
 
 class PolicyGradient(object):
   def __init__(self):
+    self.num_fit = 0.0
     self.num_timestep_seen = 0.0
 
   def build_network(self, observations, actions, next_observations, seq_mask):

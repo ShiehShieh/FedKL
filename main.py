@@ -34,9 +34,12 @@ flags.DEFINE_integer("eval_every", 1, "Perform a test run every this round.")
 
 flags.DEFINE_float("lr", 1e-3, "Learning rate.")
 flags.DEFINE_float("mu", 1e-3, "Penalty coefficient for FedProx.")
+flags.DEFINE_float("kl_targ", 1e-2, "kl divergence target of FedTRPO.")
 flags.DEFINE_float("nm_targ", 1e-3, "norm penalty target of FedTRPO.")
+flags.DEFINE_bool("disable_kl", False, "Turn off kl penalty.")
+flags.DEFINE_bool("disable_tv", False, "Turn off tv penalty.")
 flags.DEFINE_bool("has_global_svf", False, "If true, client has access to the global state visitation frequency.")
-flags.DEFINE_string("distance_metric", 'tv', "One of tv, mahalanobis and wasserstein.")
+flags.DEFINE_string("distance_metric", 'tv', "One of tv, sqrt_kl, mahalanobis and wasserstein.")
 flags.DEFINE_string("fed", "FedAvg", "Federated Learning Algorithm.")
 flags.DEFINE_string("pg", "REINFORCE", "Policy Gradient Algorithm.")
 flags.DEFINE_string("env", "halfcheetah", "halfcheetah, reacher or figureeightv1.")
@@ -120,6 +123,7 @@ def main(_):
   # Keep this number low or we may fail to simulate the heterogeneity.
   num_total_clients = 64
   universial_client = None
+  timestep_per_batch = 2048
   if FLAGS.env == 'figureeightv1':
     num_total_clients = 7
   if FLAGS.env == 'figureeightv2':
@@ -141,6 +145,7 @@ def main(_):
       logging.error(qpos)
       logging.error(noise)
     if FLAGS.env.startswith('figureeight'):
+      timestep_per_batch = 1500
       import logging as py_logging
       py_logging.disable(py_logging.INFO)
       import environment.figureeight as figureeight_lib
@@ -168,7 +173,7 @@ def main(_):
       'num_rounds': FLAGS.num_rounds,
       # The more local iteration, the more likely for FedAvg to diverge.
       'num_iter': FLAGS.n_local_iter,
-      'timestep_per_batch': 1500,  # 2048,
+      'timestep_per_batch': timestep_per_batch,
       'max_steps': 10000,
       'eval_every': FLAGS.eval_every,
       'drop_percent': 0.0,
@@ -180,6 +185,7 @@ def main(_):
       # CSV for saving reward_history.
       'reward_history_fn': FLAGS.reward_history_fn,
   }
+  beta = 1.0
   sigma = 0.0
   if FLAGS.fed == 'FedAvg':
     fl = fedavg_lib.FedAvg(**fl_params)
@@ -194,6 +200,10 @@ def main(_):
     opt_class = lambda: tf.optimizers.SGD(learning_rate=lr)
     sigma = 1.0
   fl.register_universal_client(universial_client)
+  if FLAGS.disable_kl:
+    beta = 0.0
+  if FLAGS.disable_tv:
+    sigma = 0.0
 
   # Set up clients.
   for i in range(num_total_clients):
@@ -212,9 +222,9 @@ def main(_):
       agent = agent_lib.Agent(
           str(i), trpo_lib.TRPOActor(
               env, optimizer, model_scope='trpo_' + str(i), batch_size=64,
-              num_epoch=10, future_discount=0.99, kl_targ=0.01, beta=1.0,
-              lam=0.95, seed=seed, linear=FLAGS.linear, verbose=False,
-              nm_targ=FLAGS.nm_targ, sigma=sigma,
+              num_epoch=10, future_discount=0.99, kl_targ=FLAGS.kl_targ,
+              beta=beta, lam=0.95, seed=seed, linear=FLAGS.linear,
+              verbose=False, nm_targ=FLAGS.nm_targ, sigma=sigma,
               distance_metric=FLAGS.distance_metric,
           ), init_exp=0.5, final_exp=0.0, anneal_steps=1,
           critic=critic_lib.Critic(env.state_dim, 200, seed=seed),
@@ -233,8 +243,8 @@ def main(_):
   logging.error('# retry: %d' % (fl.get_num_retry()))
 
   # Cleanup.
-  figureeight_lib.cleanup()
   if universial_client is not None:
+    figureeight_lib.cleanup()
     universial_client.cleanup()
 
 

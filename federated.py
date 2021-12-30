@@ -84,6 +84,7 @@ def main(_):
   lr = 5e-4
   lr = 3e-4
   lr = 1e-4
+  lr = 1e-3
 
   # Create env before hand for saving memory.
   envs = []
@@ -99,7 +100,7 @@ def main(_):
     # env = walker2dv2_lib.Walker2dV2(seed)
     # env = halfcheetahv2_lib.HalfCheetahV2(seed)
     env = reacherv2_lib.ReacherV2(seed, qpos_high_low=[[0.10000000000000003, 0.15000000000000002], [0.10, 0.15]])
-    env = reacherv2_lib.ReacherV2(seed)
+    # env = reacherv2_lib.ReacherV2(seed)
     envs.append(env)
 
   # Create agent.

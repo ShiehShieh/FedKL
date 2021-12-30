@@ -42,8 +42,7 @@ class FederatedBase(object):
     if self.global_weights is None:
       self.global_weights = client.get_params()
     # Create vectorized objects.
-    self.agents = vec_agent_lib.VecAgent(
-        [c.agent for c in self.clients])
+    self.agents = vec_agent_lib.VecAgent([c.agent for c in self.clients])
     self.obfilts = vectorization_lib.VecCallable(
         [c.obfilt for c in self.clients])
     self.rewfilts = vectorization_lib.VecCallable(
@@ -57,7 +56,8 @@ class FederatedBase(object):
     num_clients = min(num_clients, len(self.clients))
     # make sure for each comparison, we are selecting the same clients each round
     np.random.seed(round_id)
-    indices = np.random.choice(range(len(self.clients)), num_clients, replace=False)
+    indices = np.random.choice(
+        range(len(self.clients)), num_clients, replace=False)
     return indices, [self.clients[i] for i in indices]
 
   def aggregate(self, cws):
@@ -78,7 +78,8 @@ class FederatedBase(object):
     raise NotImplementedError
 
   def train(self):
-    logging.error('Training with {} workers per round ---'.format(self.clients_per_round))
+    logging.error('Training with {} workers per round ---'.format(
+        self.clients_per_round))
     retry_min = self.retry_min
     reward_history = []
     outer_loop = tqdm(
@@ -107,7 +108,9 @@ class FederatedBase(object):
       cpr = self.clients_per_round
       if cpr > len(selected_clients):
         cpr = len(selected_clients)
-      active_clients = np.random.choice(selected_clients, round(cpr * (1 - self.drop_percent)), replace=False)
+      active_clients = np.random.choice(
+          selected_clients, round(cpr * (1 - self.drop_percent)),
+          replace=False)
 
       # communicate the latest model
       self.distribute(active_clients)
@@ -133,7 +136,8 @@ class FederatedBase(object):
     reward_history.append(rewards)
     self.log_csv(reward_history)
     outer_loop.write(
-        'At round {} total reward received: {}'.format(self.num_rounds, np.mean(rewards)),
+        'At round {} total reward received: {}'.format(
+            self.num_rounds, np.mean(rewards)),
         file=sys.stderr)
     return reward_history
 

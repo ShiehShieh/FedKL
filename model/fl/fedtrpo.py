@@ -17,6 +17,7 @@ class FedTRPO(fedbase_lib.FederatedBase):
   def __init__(self, clients_per_round, num_rounds, num_iter,
                timestep_per_batch, max_steps, eval_every, drop_percent,
                verbose=False, svf_n_timestep=1e6, has_global_svf=False,
+               kl_targ_adap=(0.5, 0.3, 20.0),
                retry_min=-sys.float_info.max, universial_client=None,
                reward_history_fn='', **kwargs):
     super(FedTRPO, self).__init__(
@@ -26,6 +27,7 @@ class FedTRPO(fedbase_lib.FederatedBase):
     self.verbose = verbose
     self.svf_n_timestep = svf_n_timestep
     self.has_global_svf = has_global_svf
+    self.kl_targ_adap = kl_targ_adap
 
   def get_state_visitation_frequency(self, active_clients, logger=None):
     return None, [None] * len(active_clients)

@@ -149,6 +149,7 @@ class REINFORCEActor(pg_lib.PolicyGradient):
     return {}
 
   def fit(self, steps, logger=None):
+    self.num_fit += 1.0
     self.num_timestep_seen += float(len(steps['observations']))
     for i in range(len(steps['observations']))[::self.batch_size]:
       end = i + self.batch_size

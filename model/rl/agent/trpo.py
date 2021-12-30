@@ -117,6 +117,7 @@ class TRPOActor(pg_lib.PolicyGradient):
                future_discount=0.99,
                kl_targ=0.003,
                nm_targ=0.01,
+               nm_targ_adap=(0.5, 0.3, 10.0),
                lam=0.98,
                beta=1.0,
                sigma=0.0,
@@ -138,6 +139,7 @@ class TRPOActor(pg_lib.PolicyGradient):
     self.dropout_rate          = dropout_rate
     self.kl_targ               = kl_targ
     self.nm_targ               = nm_targ
+    self.nm_targ_adap          = nm_targ_adap
     self.importance_weight_cap = importance_weight_cap
     self.env_sample            = env.env_sample
     self.output_types          = env.output_types
@@ -151,6 +153,7 @@ class TRPOActor(pg_lib.PolicyGradient):
     self.max_kl                = 0.0
     self.max_nm                = 0.0
     self.max_ad                = 0.0
+    self.avg_ad                = 0.0
     self.is_norm_penalized     = True
 
     if sigma == 0.0:
@@ -272,6 +275,12 @@ class TRPOActor(pg_lib.PolicyGradient):
       distance_metric = self.prob_type.wasserstein
     elif self.distance_metric == 'tv':
       distance_metric = self.prob_type.tv
+    elif self.distance_metric == 'kl':
+      distance_metric = self.prob_type.kl
+    elif self.distance_metric == 'sqrt_kl':
+      distance_metric = lambda x, y: tf.sqrt(
+          tf.maximum(self.prob_type.kl(x, y), 1e-8)
+      )
     else:
       raise NotImplementedError
     # nm = self.norm_penalty * tf.reduce_mean(distance_metric(
@@ -324,21 +333,36 @@ class TRPOActor(pg_lib.PolicyGradient):
       beta = beta / 2.0
     elif kl > self.kl_targ * 1.5:
       beta = beta * 2.0
-    beta = min(beta, scale / self.kl_targ)
-    beta = max(beta, 1e-20)
+    beta = min(min(beta, scale / kl), 10.0)
+    beta = max(beta, 1e-8)
     self.beta.load(beta, self.sess)
 
   def adapt_nm_penalty_coefficient(self, nc, scale):
+    sigma = self.sess.run(self.sigma)
+    if sigma == 0.0:
+      return
     if not self.is_norm_penalized:
       return
-    sigma = self.sess.run(self.sigma)
-    if nc < self.nm_targ / 1.5:
+    threshold = 1.5
+    threshold = 1.1
+    if nc < self.nm_targ / threshold:
       sigma = sigma / 2.0
-    elif nc > self.nm_targ * 1.5:
+    elif nc > self.nm_targ * threshold:
       sigma = sigma * 2.0
-    sigma = min(sigma, scale / self.nm_targ)
-    sigma = max(sigma, 1e-20)
+    sigma = min(min(sigma, scale / nc), 10.0)
+    sigma = max(sigma, 1e-8)
     self.sigma.load(sigma, self.sess)
+
+  def adapt_nm_target(self, num):
+    s, e, span = self.nm_targ_adap
+    i = (e - s) / span * num
+    if s > e:
+      self.nm_targ = max(s + i, e)
+    else:
+      self.nm_targ = min(s + i, e)
+
+  def set_nm_targ(self, targ):
+    self.nm_targ = targ
 
   def sync_old_policy(self):
     self.sess.run(self.sync_old_op)
@@ -363,12 +387,15 @@ class TRPOActor(pg_lib.PolicyGradient):
         'max_kl': self.max_kl,
         'max_nm': self.max_nm,
         'max_ad': self.max_ad,
+        'avg_ad': self.avg_ad,
     }
 
   def fit(self, steps, logger=None):
+    # self.adapt_nm_target(self.num_fit)
     kl_list = []
     iw_list = []
     nm_list = []
+    self.num_fit += 1.0
     self.num_timestep_seen += float(len(steps['observations']))
     scale = np.max(steps['advantages'])
     # Train on data collected under old params.
@@ -409,6 +436,7 @@ class TRPOActor(pg_lib.PolicyGradient):
     self.max_kl = np.max(kl_list)
     self.max_nm = np.max(nm_list)
     self.max_ad = np.max(steps['advantages'])
+    self.avg_ad = np.mean(steps['advantages'])
 
   def act(self, observations, stochastic=True):
     m = {
