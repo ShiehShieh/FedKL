@@ -4,41 +4,27 @@ import tensorflow as tf
 import math
 from gym.spaces import Box, Discrete
 
-from gym.envs.mujoco import ReacherEnv
+from gym.envs.classic_control import Continuous_MountainCarEnv
 from gym.wrappers import TimeLimit
 
 # import model.utils.vec_env as vec_env_lib
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 
 
-# https://github.com/openai/gym/blob/master/gym/envs/mujoco/reacher.py
-
-
-def generate_reacher_heterogeneity(i, htype):
-  out = [[-0.2, 0.2], [-0.2, 0.2]]
-  action_noise = np.zeros(shape=(2,))
+def generate_mountaincarcontinuous_heterogeneity(i, htype):
+  out = [-0.6, -0.4]
+  action_noise = np.zeros(shape=(1,))
   if htype == 'iid':
     pass
   if htype in ['init-state', 'both']:
-    # 64 clients.
-    if i > 63:
-      raise NotImplementedError
-    j = i
-    if i in [0, 7, 56, 63]:
-      j = 1
-    row = j // 8
-    col = j % 8
-    x = -0.2 + row * 0.05
-    y = 0.2 - col * 0.05
-    out = [[x, x + 0.05], [y - 0.05, y]]
-    #
+    raise NotImplementedError
   if htype in ['dynamics', 'both']:
     # action_noise = np.clip(np.random.normal(0.0, 0.1, 2), -1.0, 1.0)
     # action_noise = np.clip(np.random.normal(0.0, 0.2, 2), -1.0, 1.0)
-    action_noise = np.clip(np.random.normal(0.0, 0.4, 2), -1.0, 1.0)
-    # action_noise = np.clip(np.random.normal(0.0, 0.8, 2), -1.0, 1.0)
+    # action_noise = np.clip(np.random.normal(0.0, 0.4, 2), -1.0, 1.0)
+    action_noise = np.clip(np.random.normal(0.0, 0.8, 1), -1.0, 1.0)
     # action_noise = np.array([0.0, 0.0])
-  if out[0][0] > out[0][1] or out[1][0] > out[1][1]:
+  if out[0] > out[1]:
     raise NotImplementedError
   return out, action_noise
 
@@ -76,18 +62,17 @@ def remove_state_about_target_position(state):
   return state
 
 
-class ReacherV2(object):
-  def __init__(self, seed=None,
-               qpos_high_low=[[-0.2, 0.2], [-0.2, 0.2]],
-               qvel_high_low=[-0.005, 0.005], action_noise=np.zeros(2)):
+class MountianCarContinuous(object):
+  def __init__(self, seed=None, qpos_low_high=[-0.6, -0.4],
+               action_noise=np.zeros(1)):
     self.seed = seed
     # Parallel envs for fast rollout.
     def make_env(seed):
       def _f():
+        return gym.make('MountainCarContinuous-v0')
         env = TimeLimit(
-            CustomizedReacherEnv(
-                qpos_high_low, qvel_high_low, action_noise),
-            max_episode_steps=50)
+            CustomizedMCCEnv(qpos_low_high, action_noise),
+            max_episode_steps=999)
         env.seed(seed)
         return env
       return _f
@@ -170,38 +155,23 @@ class ReacherV2(object):
     self.env.close()
 
 
-class CustomizedReacherEnv(ReacherEnv):
-    def __init__(self, qpos_high_low=[[-0.2, 0.2], [-0.2, 0.2]],
-                 qvel_high_low=[-0.005, 0.005], action_noise=np.zeros(2)):
-        ReacherEnv.__init__(self)
-        self.qpos_high_low = qpos_high_low
-        self.qvel_high_low = qvel_high_low
+class CustomizedMCCEnv(Continuous_MountainCarEnv):
+    def __init__(self, qpos_low_high=[-0.6, -0.4],
+                 action_noise=np.zeros(1)):
+        Continuous_MountainCarEnv.__init__(self)
+        self.qpos_low_high = qpos_low_high
         self.action_noise = action_noise
         # NOTE(XIE,Zhijie): Not a good practice though. If there is internal
         # dependence on self.step(action), we might be in trouble.
-        self.step_ = self.step
-        self.step = lambda action: self.step_(action + self.action_noise)
+        # self.step_ = self.step
+        # self.step = lambda action: self.step_(action + self.action_noise)
 
-    def reset_model(self):
-      qpos = (
-          self.np_random.uniform(low=-0.1, high=0.1, size=self.model.nq)
-          + self.init_qpos
-      )
-      while True:
-        x = self.np_random.uniform(
-            low=self.qpos_high_low[0][0],
-            high=self.qpos_high_low[0][1], size=1)[0]
-        y = self.np_random.uniform(
-            low=self.qpos_high_low[1][0],
-            high=self.qpos_high_low[1][1], size=1)[0]
-        self.goal = np.array([x, y])
-        if np.linalg.norm(self.goal) < 0.2:
-          break
-      qpos[-2:] = self.goal
-      qvel = self.init_qvel + self.np_random.uniform(
-          low=self.qvel_high_low[0], high=self.qvel_high_low[1],
-          size=self.model.nv,
-      )
-      qvel[-2:] = 0
-      self.set_state(qpos, qvel)
-      return self._get_obs()
+        def reset_():
+          low = self.qpos_low_high[0]
+          high = self.qpos_low_high[1]
+          self.state = np.array(
+              [self.np_random.uniform(low=low, high=high), 0]
+          )
+          return np.array(self.state, dtype=np.float32)
+
+        # self.reset = reset_

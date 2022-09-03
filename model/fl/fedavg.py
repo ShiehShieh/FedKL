@@ -17,11 +17,15 @@ class FedAvg(fedbase_lib.FederatedBase):
   def __init__(self, clients_per_round, num_rounds, num_iter,
                timestep_per_batch, max_steps, eval_every,
                drop_percent, verbose=False, retry_min=-sys.float_info.max,
-               reward_history_fn='', universial_client=None, **kwargs):
+               reward_history_fn='', b_history_fn='', da_history_fn='',
+               avg_history_fn='',
+               universial_client=None, eval_heterogeneity=False,
+               **kwargs):
     super(FedAvg, self).__init__(
         clients_per_round, num_rounds, num_iter, timestep_per_batch,
         max_steps, eval_every, drop_percent, retry_min, universial_client,
-        reward_history_fn)
+        eval_heterogeneity, reward_history_fn,
+        b_history_fn, da_history_fn, avg_history_fn)
     self.verbose = verbose
 
   def _inner_sequential_loop(self, i_iter, active_clients, retry_min):
@@ -42,6 +46,7 @@ class FedAvg(fedbase_lib.FederatedBase):
               lambda: c.reset_client_weight(),
               # sync local (global) params to local anchor.
               lambda: c.sync_anchor_policy(),
+              # lambda: c.sync_backup_policy(),
           ],
           lambda: c.experiment(
               num_iter=self.num_iter,
@@ -72,6 +77,7 @@ class FedAvg(fedbase_lib.FederatedBase):
       self.distribute([c])
       c.reset_client_weight()
       c.sync_anchor_policy()
+      c.sync_backup_policy()
     self.universial_client.experiment(
         num_iter=self.num_iter,
         timestep_per_batch=self.timestep_per_batch, indices=indices,

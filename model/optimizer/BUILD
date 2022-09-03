@@ -6,3 +6,10 @@ py_library(
         "pgd.py",
     ],
 )
+
+py_library(
+    name = "dbpg",
+    srcs = [
+        "dbpg.py",
+    ],
+)

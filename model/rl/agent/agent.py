@@ -72,6 +72,15 @@ class Agent(object):
   def get_num_timestep_seen(self):
     return self.policy.get_num_timestep_seen()
 
+  def set_nm_penalty_coefficient(self, v):
+    self.policy.set_nm_penalty_coefficient(v)
+
+  def adapt_nm_target(self, num):
+    self.policy.adapt_nm_target(num)
+
+  def reset_optimizer(self):
+    return self.policy.reset_optimizer()
+
   def sync_optimizer(self):
     return self.policy.sync_optimizer()
 
@@ -80,6 +89,9 @@ class Agent(object):
 
   def sync_anchor_policy(self):
     return self.policy.sync_anchor_policy()
+
+  def sync_backup_policy(self):
+    return self.policy.sync_backup_policy()
 
   def stat(self):
     return self.policy.stat()

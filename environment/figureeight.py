@@ -9,16 +9,70 @@ from stable_baselines3.common.vec_env import VecEnv
 
 from flow.benchmarks.figureeight1 import flow_params as flow_params_v1
 from flow.benchmarks.figureeight2 import flow_params as flow_params_v2
+from flow.core.params import VehicleParams
+from flow.core.params import SumoCarFollowingParams
+from flow.controllers import IDMController, ContinuousRouter, RLController
 from flow.utils.registry import make_create_env
+
+
+combination = [
+    'h', 'r', 'h', 'h', 'r', 'r', 'h', 'r', 'h', 'h', 'h', 'r', 'r', 'r',
+]
+vehicles = VehicleParams()
+for i, c in enumerate(combination):
+  if c == 'h':
+    vehicles.add(
+        veh_id="human_{}".format(i),
+        acceleration_controller=(IDMController, {"noise": 0.2}),
+        routing_controller=(ContinuousRouter, {}),
+        car_following_params=SumoCarFollowingParams(
+            speed_mode="obey_safe_speed", decel=1.5,
+        ),
+        num_vehicles=1)
+  elif c == 'r':
+    vehicles.add(
+        veh_id="rl_{}".format(i),
+        acceleration_controller=(RLController, {}),
+        routing_controller=(ContinuousRouter, {}),
+        car_following_params=SumoCarFollowingParams(
+            speed_mode="obey_safe_speed",
+        ),
+        num_vehicles=1)
+  else:
+    pass
+
+# for i in range(7):
+#   vehicles.add(
+#       veh_id="human{}".format(i),
+#       acceleration_controller=(IDMController, {
+#           "noise": 0.2
+#       }),
+#       routing_controller=(ContinuousRouter, {}),
+#       car_following_params=SumoCarFollowingParams(
+#           speed_mode="obey_safe_speed",
+#           decel=1.5,
+#       ),
+#       num_vehicles=1)
+#   vehicles.add(
+#       veh_id="rl{}".format(i),
+#       acceleration_controller=(RLController, {}),
+#       routing_controller=(ContinuousRouter, {}),
+#       car_following_params=SumoCarFollowingParams(
+#           speed_mode="obey_safe_speed",
+#           ),
+#       num_vehicles=1)
 
 
 flow_params_v1['sim'].print_warnings = False
 flow_params_v1['sim'].seed = 0
+flow_params_v1['sim'].restart_instance = True
+flow_params_v1['veh'] = vehicles
 _create_env_v1, _env_name_v1 = make_create_env(flow_params_v1, version=1)
 _global_env_v1 = _create_env_v1()
 
 flow_params_v2['sim'].print_warnings = False
 flow_params_v2['sim'].seed = 0
+flow_params_v2['sim'].restart_instance = True
 _create_env_v2, _env_name_v2 = make_create_env(flow_params_v2, version=2)
 _global_env_v2 = _create_env_v2()
 
@@ -42,7 +96,6 @@ class FlowFigureEight(VecEnv):
     return states
 
   def _from_reward(self, r):
-    # TODO(XIE,Zhijie): Divided by self.num_cav?
     return [r for _ in range(self.num_cav)]
 
   def _from_done(self, done):
@@ -55,12 +108,24 @@ class FlowFigureEight(VecEnv):
     return np.concatenate(self.actions, axis=0)
 
   def reset(self):
+    # NOTE(XIE,Zhijie): Remember to set restart_instance to True, or it
+    # can't be reset.
+    return self._from_state(self.global_env.reset())
     # NOTE(XIE,Zhijie): The reset function of flow and sumo is buggy.
     # cf. https://www.eclipse.org/lists/sumo-user/msg05429.html
     #     https://github.com/eclipse/sumo/issues/6479
     self.global_env.terminate()
     self.global_env.close()
-    self.global_env = gym.envs.make(self.env_name)
+    num_try = 0
+    while num_try < 3:
+      try:
+        num_try += 1
+        self.global_env = gym.envs.make(self.env_name)
+        break
+      except BlockingIOError as e:
+        print('%s' % e)
+        if num_try == 3:
+          raise e
     return self._from_state(self.global_env.reset())
 
   def step_async(self, actions):
@@ -68,7 +133,14 @@ class FlowFigureEight(VecEnv):
 
   def step_wait(self):
     s, r, done, info = self.global_env.step(self._to_action(self.actions))
-    return self._from_state(s), self._from_reward(r), self._from_done(done), self._from_info(info)
+    # Sanity check. It happens that we lose some vehicles during training.
+    if len(s) / 2 != self.num_vehicle:
+      info['err'] = '# vehicle is not consistent: got: %s, want: %s. actions: %s. r: %s. done: %s. info: %s.' % (len(s) / 2, self.num_vehicle, self.actions, r, done, info)
+      return ([[0.0 for _ in range(6)] for _ in range(self.num_vehicle)],
+              self._from_reward(r), self._from_done(True),
+              self._from_info(info))
+    return (self._from_state(s), self._from_reward(r),
+            self._from_done(done), self._from_info(info))
 
   def close(self):
     self.global_env.close()

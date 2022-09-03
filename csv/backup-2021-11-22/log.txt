@@ -1,1 +1,0 @@
-./main --pg=xxx --fed=xxx --lr=1e-4 --nm_targ=2e0 --mu=1e-2 --distance_metric=tv --retry_min+-50 --n_local_iter=50/100 --clients_per_round=5 --parallel=10 --env-reacher --reward_history_fn=

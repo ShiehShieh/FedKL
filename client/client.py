@@ -29,7 +29,7 @@ class Client(object):
     self.rewfilt = filters_lib.IDENTITY
     if filt:
       self.obfilt = filters_lib.ZFilter(
-          env.env.observation_space.shape, clip=5)
+          env.state_dim, clip=5)
       self.rewfilt = filters_lib.ZFilter((), demean=False, clip=10)
     self.num_test_epochs = num_test_epochs
     self.use_svf = False
@@ -49,6 +49,15 @@ class Client(object):
   def get_client_weight(self):
     return self.agent.get_num_timestep_seen()
 
+  def set_nm_penalty_coefficient(self, v):
+    self.agent.set_nm_penalty_coefficient(v)
+
+  def adapt_nm_target(self, num):
+    self.agent.adapt_nm_target(num)
+
+  def reset_optimizer(self):
+    return self.agent.reset_optimizer()
+
   def sync_optimizer(self):
     return self.agent.sync_optimizer()
 
@@ -57,6 +66,9 @@ class Client(object):
 
   def sync_anchor_policy(self):
     return self.agent.sync_anchor_policy()
+
+  def sync_backup_policy(self):
+    return self.agent.sync_backup_policy()
 
   def cleanup(self):
     self.env.cleanup()
@@ -113,7 +125,9 @@ class Client(object):
           if 'next_observations' in self.extra_features:
             trajectory['next_observations'].append(next_states[i])
           if 'probs' in self.extra_features:
-            trajectory['probs'].append(probses[i])
+            trajectory['probs'].append(
+                self.agent.policy.prob_type.py_likelihood(
+                    actions[i], probses[i]))
 
         states = next_states
         if np.all(dones):
@@ -152,6 +166,29 @@ class Client(object):
         -1, paths, gamma=self.agent.policy.future_discount)
     envs.close()
     return d
+
+  def get_da(self):
+    # assert 'probs' in self.extra_features
+    svf_m = defaultdict(float)
+    envs = self.env.get_parallel_envs(self.parallel)
+    paths, _ = self.rollout(envs, self.svf_n_timestep, -1)
+    # for path in paths:
+    #   path['prob_advs'] = path['probs'] * path['advantages']
+    d, a = svf_lib.find_discounted_svf(
+        -1, paths, gamma=self.agent.policy.future_discount)
+    envs.close()
+    return d, a
+    out = defaultdict(lambda: defaultdict(float))
+    out = defaultdict(float)
+    for obsk in d:
+      mu = d[obsk]
+      for actk in a[obsk]:
+        adv = a[obsk][actk]
+        if obsk in out and actk in out[obsk]:
+          exit(0)
+        # out[obsk][actk] = mu * adv
+        out[obsk + actk] = mu * adv
+    return out
 
   def experiment(self, num_iter, timestep_per_batch,
                  callback_before_fit=[], logger=None, norm_penalty=None):
@@ -192,14 +229,14 @@ class UniversalClient(object):
     self.envs = envs
     self.future_discount = future_discount
     self.lam = lam
-    self.episode_history = deque(maxlen=10 * self.envs.num_envs)
+    self.episode_history = deque(maxlen=5 * self.envs.num_envs)
     self.num_test_epochs = num_test_epochs
     self.num_iter_seen = 0
 
   def test(self, agents, obfilts, rewfilts):
     _, _, episode_rewards = vectorization_lib.vectorized_rollout(
         agents, self.envs, obfilts, rewfilts, self.future_discount,
-        self.lam, -1, self.num_test_epochs, True)
+        self.lam, -1, self.num_test_epochs, True, logger=None)
     return np.mean(episode_rewards, axis=1)
 
   def experiment(self, num_iter, timestep_per_batch, indices, agents,
@@ -216,7 +253,7 @@ class UniversalClient(object):
       # Rollout.
       _, paths_list, episode_rewards = vectorization_lib.vectorized_rollout(
           agents, self.envs, obfilts, rewfilts, self.future_discount,
-          self.lam, timestep_per_batch, -1, True)
+          self.lam, timestep_per_batch, -1, True, logger=logger)
       steps_list = []
       for paths in paths_list:
         steps = utils_lib.convert_trajectories_to_steps(

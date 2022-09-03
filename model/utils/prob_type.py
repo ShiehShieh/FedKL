@@ -2,6 +2,7 @@ import theano
 import numpy as np
 import tensorflow as tf
 import tensorflow.compat.v1 as tfv1
+import scipy.stats
 
 import model.utils.distributions as distributions_lib
 import model.utils.utils as utils_lib
@@ -85,6 +86,12 @@ class DiagGauss(ProbType):
 
     def likelihood(self, a, prob):
         return tf.math.exp(self.loglikelihood(a, prob))
+
+    def py_likelihood(self, a, prob):
+      # Must be one dimensional.
+      mean0 = prob[:self.d]
+      std0 = prob[self.d:]
+      return scipy.stats.multivariate_normal(mean0, std0).pdf(a)
 
     def kl(self, prob0, prob1):
       mean0 = prob0[:, :self.d]

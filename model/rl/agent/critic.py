@@ -29,7 +29,7 @@ L2 = 0.01
 
 class Critic(object):
     """ NN-based state-value function """
-    def __init__(self, obs_dim, hid1_mult, seed=None):
+    def __init__(self, obs_dim, hid1_mult, seed=None, lr=3e-4, epochs=30):
         """
         Args:
             obs_dim: number of dimensions in observation vector (int)
@@ -40,8 +40,8 @@ class Critic(object):
         self.replay_buffer_y = None
         self.obs_dim = obs_dim
         self.hid1_mult = hid1_mult
-        self.epochs = 30
-        self.lr = None  # learning rate set in _build_model()
+        self.epochs = epochs
+        self.lr = lr
         self.model = self._build_model()
 
     def set_params(self, model_params=None):
@@ -56,10 +56,13 @@ class Critic(object):
         """ Construct TensorFlow graph, including loss function, init op and train op """
         obs = Input(shape=(self.obs_dim,), dtype='float32', name='value_network_input')
         # hid1 layer size is 10x obs_dim, hid3 size is 10, and hid2 is geometric mean
+        # For Mujoco Reacher-v2.
         hid1_units = 64
         hid2_units = 64
+        # For Flow SUMO.
+        hid1_units = 256
+        hid2_units = 256
         # heuristic to set learning rate based on NN size (tuned on 'Hopper-v1')
-        self.lr = 3e-4
         print('Value Params -- h1: {}, h2: {}, h3: {}, lr: {:.3g}'
               .format(hid1_units, hid2_units, 0, self.lr))
         y = Dense(
@@ -85,8 +88,8 @@ class Critic(object):
         """
         num_batches = max(x.shape[0] // 128, 1)
         batch_size = x.shape[0] // num_batches
-        y_hat = self.model.predict(x)  # check explained variance prior to update
-        old_exp_var = 1 - np.var(y - y_hat)/np.var(y)
+        # y_hat = self.model.predict(x)  # check explained variance prior to update
+        # old_exp_var = 1 - np.var(y - y_hat)/np.var(y)
         if self.replay_buffer_x is None:
             x_train, y_train = x, y
         else:
@@ -94,11 +97,12 @@ class Critic(object):
             y_train = np.concatenate([y, self.replay_buffer_y])
         self.replay_buffer_x = x
         self.replay_buffer_y = y
-        o = self.model.fit(x_train, y_train, epochs=self.epochs, batch_size=batch_size,
-                       shuffle=True, verbose=0)
-        y_hat = self.model.predict(x)
-        loss = np.mean(np.square(y_hat - y))         # explained variance after update
-        exp_var = 1 - np.var(y - y_hat) / np.var(y)  # diagnose over-fitting of val func
+        o = self.model.fit(
+            x_train, y_train, epochs=self.epochs, batch_size=batch_size,
+            shuffle=True, verbose=0)
+        # y_hat = self.model.predict(x)
+        # loss = np.mean(np.square(y_hat - y))         # explained variance after update
+        # exp_var = 1 - np.var(y - y_hat) / np.var(y)  # diagnose over-fitting of val func
         return o
 
     def predict(self, x):

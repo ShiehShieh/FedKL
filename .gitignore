@@ -141,3 +141,5 @@ bazel-*
 # Images, Datum.
 *.png
 *.csv
+
+csv/

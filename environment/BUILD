@@ -71,6 +71,13 @@ py_library(
 )
 
 py_library(
+    name = "mountaincarcontinuous",
+    srcs = [
+        "mountaincarcontinuous.py",
+    ],
+)
+
+py_library(
     name = "figureeight",
     srcs = [
         "figureeight.py",

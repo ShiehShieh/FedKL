@@ -17,17 +17,20 @@ class FedTRPO(fedbase_lib.FederatedBase):
   def __init__(self, clients_per_round, num_rounds, num_iter,
                timestep_per_batch, max_steps, eval_every, drop_percent,
                verbose=False, svf_n_timestep=1e6, has_global_svf=False,
-               kl_targ_adap=(0.5, 0.3, 20.0),
+               kl_targ_adap=(0.5, 0.3, 20.0), sigma=1e-4,
                retry_min=-sys.float_info.max, universial_client=None,
-               reward_history_fn='', **kwargs):
+               reward_history_fn='', b_history_fn='', da_history_fn='',
+               avg_history_fn='', eval_heterogeneity=False, **kwargs):
     super(FedTRPO, self).__init__(
         clients_per_round, num_rounds, num_iter, timestep_per_batch,
         max_steps, eval_every, drop_percent, retry_min, universial_client,
-        reward_history_fn)
+        eval_heterogeneity, reward_history_fn,
+        b_history_fn, da_history_fn, avg_history_fn)
     self.verbose = verbose
     self.svf_n_timestep = svf_n_timestep
     self.has_global_svf = has_global_svf
     self.kl_targ_adap = kl_targ_adap
+    self.sigma = sigma
 
   def get_state_visitation_frequency(self, active_clients, logger=None):
     return None, [None] * len(active_clients)
@@ -87,6 +90,10 @@ class FedTRPO(fedbase_lib.FederatedBase):
               lambda: c.reset_client_weight(),
               # sync local (global) params to local anchor.
               lambda: c.sync_anchor_policy(),
+              # lambda: c.sync_backup_policy(),
+              # lambda: c.set_nm_penalty_coefficient(self.sigma),
+              # Annealling the d_global target value (Increasing penalty).
+              lambda: c.adapt_nm_target(i_iter),
           ],
           lambda: c.experiment(
               num_iter=self.num_iter,
@@ -118,6 +125,8 @@ class FedTRPO(fedbase_lib.FederatedBase):
       self.distribute([c])
       c.reset_client_weight()
       c.sync_anchor_policy()
+      c.sync_backup_policy()
+      c.set_nm_penalty_coefficient(self.sigma)
     self.universial_client.experiment(
         num_iter=self.num_iter,
         timestep_per_batch=self.timestep_per_batch, indices=indices,

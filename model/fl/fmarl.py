@@ -12,7 +12,7 @@ import model.rl.agent.vec_agent as vec_agent_lib
 import model.utils.vectorization as vectorization_lib
 
 
-class FedProx(fedbase_lib.FederatedBase):
+class FMARL(fedbase_lib.FederatedBase):
 
   def __init__(self, clients_per_round, num_rounds, num_iter,
                timestep_per_batch, max_steps, eval_every,
@@ -21,7 +21,7 @@ class FedProx(fedbase_lib.FederatedBase):
                avg_history_fn='',
                universial_client=None, eval_heterogeneity=False,
                **kwargs):
-    super(FedProx, self).__init__(
+    super(FMARL, self).__init__(
         clients_per_round, num_rounds, num_iter, timestep_per_batch,
         max_steps, eval_every, drop_percent, retry_min, universial_client,
         eval_heterogeneity, reward_history_fn,
@@ -44,11 +44,9 @@ class FedProx(fedbase_lib.FederatedBase):
           [
               lambda: self.distribute([c]),
               lambda: c.reset_client_weight(),
-              # sync local (global) params to local optimizer.
-              # lambda: c.sync_optimizer(),
-              # sync local (global) params to local anchor.
-              lambda: c.sync_anchor_policy(),
               # lambda: c.sync_backup_policy(),
+              # reset the optimizaer's cnt before each round of training.
+              lambda: c.reset_optimizer(),
           ],
           lambda: c.experiment(
               num_iter=self.num_iter,
@@ -60,7 +58,6 @@ class FedProx(fedbase_lib.FederatedBase):
           logger=logger if verbose else None,
           retry_min=retry_min - np.abs(retry_min),
       )
-
       # gather weights from client
       cws.append((c.get_client_weight(), c.get_params()))
 
@@ -71,6 +68,7 @@ class FedProx(fedbase_lib.FederatedBase):
 
   def _inner_vectorized_loop(self, i_iter, indices, retry_min):
     verbose = self.verbose
+    # Create vectorized objects.
     active_clients = [self.clients[idx] for idx in indices]
     # buffer for receiving client solutions
     cws = []
@@ -78,9 +76,8 @@ class FedProx(fedbase_lib.FederatedBase):
     for c in active_clients:
       self.distribute([c])
       c.reset_client_weight()
-      c.sync_optimizer()
-      c.sync_anchor_policy()
-      c.sync_backup_policy()
+      # c.sync_backup_policy()
+      c.reset_optimizer()
     self.universial_client.experiment(
         num_iter=self.num_iter,
         timestep_per_batch=self.timestep_per_batch, indices=indices,
@@ -88,6 +85,8 @@ class FedProx(fedbase_lib.FederatedBase):
         callback_before_fit=[c.sync_old_policy for c in active_clients],
         logger=print if verbose else None,
     )
+    # lamb = c.agent.policy.sess.run([c.agent.policy.optimizer.get_lambda()])
+    # logging.error(lamb)
     # gather weights from client
     for c in active_clients:
       cws.append((c.get_client_weight(), c.get_params()))

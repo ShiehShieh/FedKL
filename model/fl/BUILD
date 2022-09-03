@@ -30,6 +30,7 @@ py_library(
     ],
     deps = [
         ":fedbase",
+        "//model/rl/agent:critic",
         "//model/rl/agent:vec_agent",
         "//model/utils:vectorization",
     ],
@@ -39,6 +40,18 @@ py_library(
     name = "fedtrpo",
     srcs = [
         "fedtrpo.py",
+    ],
+    deps = [
+        ":fedbase",
+        "//model/rl/agent:vec_agent",
+        "//model/utils:vectorization",
+    ],
+)
+
+py_library(
+    name = "fmarl",
+    srcs = [
+        "fmarl.py",
     ],
     deps = [
         ":fedbase",

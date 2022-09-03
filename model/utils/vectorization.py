@@ -32,7 +32,7 @@ def path_length(trajectory):
   return len(trajectory['actions'])
 
 
-def vectorized_rollout(agents, envs, obfilts, rewfilts, future_discount, lam, n_timesteps=-1, n_episodes=-1, is_per=False, extra_features=set([])):
+def vectorized_rollout(agents, envs, obfilts, rewfilts, future_discount, lam, n_timesteps=-1, n_episodes=-1, is_per=False, extra_features=set([]), logger=None):
   if (n_timesteps < 0 and n_episodes < 0) or \
       (n_timesteps > 0 and n_episodes > 0):
     raise Exception('either n_timesteps: [%s] or n_episodes: [%s] should be larger than 0' % (n_timesteps, n_episodes))
@@ -50,9 +50,15 @@ def vectorized_rollout(agents, envs, obfilts, rewfilts, future_discount, lam, n_
     # Generate trajectory.
     trajectories = [defaultdict(list) for i in range(envs.num_envs)]
     already_done = np.zeros(shape=(envs.num_envs,), dtype=bool)
+    is_corrupt = False
     while True:
       actions, probses = agents.act(states)
-      next_states, rewards, dones, _ = envs.step(actions)
+      next_states, rewards, dones, infos = envs.step(actions)
+      if 'err' in infos[0]:
+        is_corrupt = True
+        if logger:
+          logger("infos[0]: {}".format(infos[0]))
+        break
 
       # Process each env seperately.
       for i, trajectory in enumerate(trajectories):
@@ -78,6 +84,9 @@ def vectorized_rollout(agents, envs, obfilts, rewfilts, future_discount, lam, n_
           np.min([timesteps_per[i] + path_length(t)
                   for i, t in enumerate(trajectories)]) > n_timesteps:
         break
+
+    if is_corrupt:
+      continue
 
     for i, tr in enumerate(total_rewards):
       episode_rewards[i].append(tr)

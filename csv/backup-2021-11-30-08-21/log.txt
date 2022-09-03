@@ -1,1 +1,0 @@
-./main --pg=xxx --fed=xxx --lr=1e-4 --nm_targ=5e1 --mu=1e-2 --distance_metric=tv --retry_min=-500 --n_local_iter=10 --clients_per_round=10 --parallel=10 --heterogeneity_type=iid --expose_critic --env-reacher --reward_history_fn=
