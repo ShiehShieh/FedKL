@@ -78,8 +78,8 @@ class FederatedBase(object):
   def select_clients(self, round_id, num_clients):
     num_clients = min(num_clients, len(self.clients))
     # make sure for each comparison, we are selecting the same clients each round
-    # np.random.seed(round_id)
-    np.random.seed(round_id + 1000)  #
+    np.random.seed(round_id)
+    # np.random.seed(round_id + 1000)  #
     # np.random.seed(round_id + 10000)  #
     indices = np.random.choice(
         range(len(self.clients)), num_clients, replace=False)
