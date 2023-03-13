@@ -16,9 +16,9 @@ File Structure
 - Algorithm and Model Implementations: model/
     - RL related: model/fl
     - FL related: model/rl
-	- Agent wrapper: model/rl/agent.py
+        - Agent wrapper: model/rl/agent.py
         - The core of FedKL local actor: model/rl/trpo.py
-	- Critic: model/rl/critic.py
+        - Critic: model/rl/critic.py
     - Optimizers: model/optimizer
 - Customized RL Environments: environment/
 - Implementation of federated client/device: client/
