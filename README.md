@@ -14,7 +14,7 @@ Please refer to requirements.txt. Dependencies can be installed by using the fol
 
 Please install [Bazel](https://bazel.build/install). After installing it, you can build the program with
 
-    bazel build -c opt
+    bazel build -c opt //...
 
 and run it with
 
